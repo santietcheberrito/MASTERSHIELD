@@ -1,0 +1,7 @@
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "db: requiere una base PostgreSQL real (DATABASE_URL en el entorno)",
+]
