@@ -89,19 +89,19 @@ minutos del caché por defecto y se estaría pagando la escritura todo el tiempo
   con total seguridad a cada cliente. El archivo lo dice arriba de todo.
 - [ ] Confirmar vigencia: es de 2025. Marcas, garantías y formatos de rollo.
 
-### 3b. El catálogo del sitio no coincide con el documento
+### 3b. Catálogo: 4 productos, confirmado
 
-El sitio lista 4 productos. El documento menciona dos que no están ahí:
+El cliente confirmó que son los 4 del sitio. Queda:
 
-- [ ] **Roof Shield®** — control solar para instalación **exterior** en
-  pérgolas, con vida útil de 1 a 3 años. ¿Es un quinto producto con su propio
-  precio, o una variante de la lámina de control solar arquitectónico?
-- [ ] **Control solar vehicular** — el documento dice que lo venden ("¿Tienen
-  láminas de control solar para carros?" → "Así es"), pero el sitio solo lista
-  seguridad vehicular. ¿Son dos productos vehiculares o uno?
+- [x] **Roof Shield®** — no es un quinto producto: es el control solar
+  instalado por el lado exterior. Queda como `variante_exterior` en
+  `productos.yaml`.
+- [ ] ¿Roof Shield tiene precio propio o el mismo que la instalación interna?
+- [ ] **Control solar vehicular** — el documento dice que lo venden, el sitio
+  solo lista seguridad vehicular. Cuál de los dos está desactualizado.
 
-Si el agente ofrece un producto que no existe, o deja de ofrecer uno que sí,
-es un problema real. Hay que cerrarlo antes de escribir el prompt.
+**La lista completa de consultas para el cliente está en
+[docs/consultas-al-cliente.md](docs/consultas-al-cliente.md).**
 
 ## Resueltos
 

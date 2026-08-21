@@ -32,6 +32,15 @@ productos:
     linea: arquitectonico
     objetivo: control_solar
     precio_m2: {}   # una entrada por region
+    # Roof Shield(R) es este mismo producto instalado por el lado exterior,
+    # para pergolas donde el diseño no permite la instalacion interna. No es un
+    # quinto producto: el cliente confirmo que son 4. Vida util 1 a 3 años
+    # contra 15/10/5 de la interna, asi que el agente siempre recomienda
+    # primero la interna.
+    variante_exterior:
+      nombre: "Roof Shield®"
+      vida_util_años: [1, 3]
+      precio_m2: null   # A CONFIRMAR: ¿mismo precio que la instalacion interna?
 
   - id: privacidad_arquitectonica
     nombre: "Lámina de Privacidad Arquitectónica"
