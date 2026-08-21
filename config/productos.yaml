@@ -1,0 +1,52 @@
+# Productos de MasterShield(R) y matriz de precios.
+#
+# Los nombres salen del sitio del cliente, tal cual los usa el. No cambiarlos
+# por sinonimos: el agente los tiene que nombrar igual que la empresa.
+#
+# Lo que esta en null son datos que faltan del cliente. La herramienta
+# calcular_precio se NIEGA a cotizar mientras falte cualquiera de ellos, y el
+# agente deriva a un asesor. Es a proposito: un precio equivocado dicho a un
+# cliente real es peor que no dar precio.
+
+moneda: USD                 # A CONFIRMAR: Ecuador esta dolarizado
+iva_incluido: null          # A CONFIRMAR: en Ecuador es 15%. BLOQUEA cotizar.
+incluye_instalacion: null   # A CONFIRMAR: material solo, o material + mano de obra
+
+# Minimo de venta. Confirmado por el cliente.
+# Lo aplica el codigo y no el prompt, para que el modelo no "haga una
+# excepcion" porque el cliente insistio. Cuando no se llega, el agente propone
+# sumar otro sector en vez de cortar la conversacion.
+minimo_m2: 5
+minimo_por: null            # A CONFIRMAR: "producto" o "pedido"
+minimo_aplica_vehicular: null  # A CONFIRMAR: ahi se cotiza por vehiculo, no por m2
+
+# El precio por m2 varia segun la region del pais. Estas son las claves que
+# despues usa `precio_m2` en cada producto.
+# A CONFIRMAR: cuales son las regiones. Define ademas con que granularidad el
+# agente tiene que relevar `zona`, que es el eje de calificacion mas fuerte.
+regiones: []
+
+productos:
+  - id: control_solar_arquitectonico
+    nombre: "Lámina de Control Solar Arquitectónico"
+    linea: arquitectonico
+    objetivo: control_solar
+    precio_m2: {}   # una entrada por region
+
+  - id: privacidad_arquitectonica
+    nombre: "Lámina de Privacidad Arquitectónica"
+    linea: arquitectonico
+    objetivo: privacidad
+    precio_m2: {}
+
+  - id: seguridad_arquitectonica
+    nombre: "Lámina de Seguridad Arquitectónica"
+    linea: arquitectonico
+    objetivo: seguridad
+    precio_m2: {}
+
+  - id: seguridad_vehicular
+    nombre: "Lámina de Seguridad Vehicular"
+    linea: vehicular
+    objetivo: seguridad
+    precio_m2: {}

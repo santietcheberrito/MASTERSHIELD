@@ -27,9 +27,15 @@ El precio por m² **varía según la región del país**, así que no alcanza un
 lista: hace falta una tabla. Formato que necesito, una fila por producto y una
 columna por región:
 
+Los cuatro productos ya están anotados en `config/productos.yaml` con los
+nombres del sitio del cliente. Falta el precio:
+
 | Producto | Región A | Región B | ... |
 |---|---|---|---|
-| (nombre exacto, como lo dicen ellos) | USD/m² | USD/m² | |
+| Lámina de Control Solar Arquitectónico | USD/m² | USD/m² | |
+| Lámina de Privacidad Arquitectónica | | | |
+| Lámina de Seguridad Arquitectónica | | | |
+| Lámina de Seguridad Vehicular | | | |
 
 Preguntas que definen la tabla:
 
@@ -59,12 +65,25 @@ llega, el agente propone sumar otro sector en vez de cortar.
 ### 3. El documento de preguntas frecuentes
 
 Es la fuente de las negaciones —no aísla térmicamente, no reduce ruido, no es
-antibalas— y ahora va **entero en el contexto del agente**, no en una base
-vectorial. Es la pieza que impide que el modelo conteste desde su conocimiento
-general del rubro, que para estos productos es falso.
+antibalas— y es la pieza que impide que el modelo conteste desde su
+conocimiento general del rubro, que para estos productos es falso.
+
+**No va crudo al contexto.** El documento queda en el repo como fuente, y de él
+se destila `prompts/conocimiento.md`: 60-80 líneas con las negaciones como
+reglas explícitas, qué resuelve cada producto, garantías y qué queda fuera del
+alcance del agente. Un documento de preguntas frecuentes está escrito para que
+lo lea una persona, con prosa y ejemplos; enterradas ahí, las negaciones pesan
+menos que si están como afirmaciones sueltas. La versión destilada sale más
+chica **y** más confiable, no es un compromiso entre las dos cosas.
+
+Ese prefijo estático va con caché de prompt de Anthropic, TTL de una hora: con
+decenas de conversaciones por día los huecos entre mensajes superan los 5
+minutos del caché por defecto y se estaría pagando la escritura todo el tiempo.
 
 - [ ] Conseguir el documento.
 - [ ] Confirmar vigencia: es de 2025. Marcas, garantías y formatos de rollo.
+- [ ] Destilarlo a `prompts/conocimiento.md` y que lo revise alguien de la
+  empresa antes de usarlo. Es la única fuente de verdad técnica del agente.
 
 ## Resueltos
 
