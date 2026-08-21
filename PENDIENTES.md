@@ -80,10 +80,28 @@ Ese prefijo estático va con caché de prompt de Anthropic, TTL de una hora: con
 decenas de conversaciones por día los huecos entre mensajes superan los 5
 minutos del caché por defecto y se estaría pagando la escritura todo el tiempo.
 
-- [ ] Conseguir el documento.
+- [x] Conseguir el documento. Está en `docs/`, en .docx y en texto plano.
+- [x] Destilarlo a `prompts/conocimiento.md`, con las negaciones como reglas
+  explícitas y una sección de lo que el agente no sabe y tiene que derivar.
+  17 tests protegen que ninguna negación se pierda en futuras ediciones.
+- [ ] **Que lo revise alguien de MasterShield antes de producción.** Es la
+  única fuente de verdad técnica del agente: un error ahí se lo va a repetir
+  con total seguridad a cada cliente. El archivo lo dice arriba de todo.
 - [ ] Confirmar vigencia: es de 2025. Marcas, garantías y formatos de rollo.
-- [ ] Destilarlo a `prompts/conocimiento.md` y que lo revise alguien de la
-  empresa antes de usarlo. Es la única fuente de verdad técnica del agente.
+
+### 3b. El catálogo del sitio no coincide con el documento
+
+El sitio lista 4 productos. El documento menciona dos que no están ahí:
+
+- [ ] **Roof Shield®** — control solar para instalación **exterior** en
+  pérgolas, con vida útil de 1 a 3 años. ¿Es un quinto producto con su propio
+  precio, o una variante de la lámina de control solar arquitectónico?
+- [ ] **Control solar vehicular** — el documento dice que lo venden ("¿Tienen
+  láminas de control solar para carros?" → "Así es"), pero el sitio solo lista
+  seguridad vehicular. ¿Son dos productos vehiculares o uno?
+
+Si el agente ofrece un producto que no existe, o deja de ofrecer uno que sí,
+es un problema real. Hay que cerrarlo antes de escribir el prompt.
 
 ## Resueltos
 
