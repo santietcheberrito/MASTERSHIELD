@@ -5,11 +5,6 @@ que aparecen los datos.
 
 ## Bloqueantes
 
-- [ ] **Con qué se generan los embeddings del catálogo.** CLAUDE.md fija
-  `vector(1536)` pero no el proveedor, y Anthropic no tiene API de embeddings
-  propia. 1536 es el tamaño de `text-embedding-3-small` de OpenAI. Si se usa
-  otro proveedor cambia la dimensión y hay que ajustar la migración. Bloquea
-  `agente/catalogo.py` (sesión 4), no la sesión 1.
 - [ ] **Credenciales de la Cloud API de WhatsApp** (Meta directo, ya decidido):
   token, phone number id y app secret para validar `X-Hub-Signature-256`.
   Bloquean el adaptador de WhatsApp. La costura ya está: alcanza con un
@@ -18,8 +13,58 @@ que aparecen los datos.
   Bloquean `config/calificacion.yaml`, `scoring.py` y el prompt del agente.
 - [ ] **IDs numéricos de Kommo**: pipeline, etapas, campos personalizados de
   contacto y de lead. Bloquean `config/kommo.yaml` y `kommo/sincronizacion.py`.
-- [ ] **Credenciales**: `ANTHROPIC_API_KEY`, `KOMMO_ACCESS_TOKEN`,
-  `BSP_TOKEN`, `BSP_WEBHOOK_SECRET`.
+- [ ] **Credenciales**: `KOMMO_ACCESS_TOKEN`, y las de la Cloud API de
+  WhatsApp. `ANTHROPIC_API_KEY` y `TELEGRAM_BOT_TOKEN` ya están.
+
+## Lo que hay que pedirle al cliente para la sesión 4
+
+Sin esto el agente no se puede escribir: son datos de negocio, no decisiones
+técnicas, y `CLAUDE.md` prohíbe inventarlos.
+
+### 1. Los 4 productos y la matriz de precios
+
+El precio por m² **varía según la región del país**, así que no alcanza una
+lista: hace falta una tabla. Formato que necesito, una fila por producto y una
+columna por región:
+
+| Producto | Región A | Región B | ... |
+|---|---|---|---|
+| (nombre exacto, como lo dicen ellos) | USD/m² | USD/m² | |
+
+Preguntas que definen la tabla:
+
+- [ ] **¿Cuáles son las regiones?** ¿Sierra / Costa / Amazonía, o por ciudad
+  (Quito, Guayaquil, Cuenca...), o "Quito y alrededores" contra "resto del
+  país"? De esto depende con qué granularidad el agente tiene que relevar
+  `zona`, que además es el eje de calificación más fuerte.
+- [ ] **¿El precio incluye instalación o es solo material?**
+- [ ] **¿Incluye IVA?** En Ecuador es 15%. Si el agente dice "son 400" y llegan
+  460, es un problema con el cliente, no un detalle de redacción.
+- [ ] **¿Está en dólares?** Ecuador está dolarizado, pero prefiero confirmarlo.
+- [ ] **La variación regional, ¿es solo del precio por m²?** `CLAUDE.md`
+  menciona montos mínimos de instalación fuera de Quito: ¿siguen existiendo
+  aparte, o quedaron absorbidos en el precio por región?
+
+### 2. El mínimo de 5 m²
+
+Ya confirmado: no venden menos de 5 m². Lo aplica el código, no el prompt, para
+que el modelo no "haga una excepción" porque el cliente insistió. Cuando no se
+llega, el agente propone sumar otro sector en vez de cortar.
+
+- [ ] **¿Es por producto o por pedido?** Si alguien quiere 3 m² de una lámina
+  y 4 m² de otra, ¿son 7 y se puede, o no llega ninguno de los dos?
+- [ ] **¿Aplica a la línea vehicular?** Ahí los metros no son la unidad
+  natural: se cotiza por vehículo.
+
+### 3. El documento de preguntas frecuentes
+
+Es la fuente de las negaciones —no aísla térmicamente, no reduce ruido, no es
+antibalas— y ahora va **entero en el contexto del agente**, no en una base
+vectorial. Es la pieza que impide que el modelo conteste desde su conocimiento
+general del rubro, que para estos productos es falso.
+
+- [ ] Conseguir el documento.
+- [ ] Confirmar vigencia: es de 2025. Marcas, garantías y formatos de rollo.
 
 ## Resueltos
 
@@ -30,6 +75,12 @@ que aparecen los datos.
 
 ## Calibración pendiente
 
+- [x] **Metros cuadrados mínimos.** Son 5 m². Lo dijo el cliente.
+- [x] **Búsqueda semántica descartada.** Con 4 productos y un documento de
+  preguntas frecuentes, el corpus entra en el contexto. RAG sobre algo tan
+  chico es peor, no mejor: su modo de falla es recuperar el chunk equivocado y
+  contestar desde los priores del modelo, que es justo lo que hay que evitar.
+  Se caen `catalogo.py`, los embeddings, pgvector y la tabla `catalogo`.
 - [x] **`VENTANA_BUFFER_SEG`**. Movida a 30s. Con 6 las ráfagas se partían:
   medido con mensajes reales, la gente deja huecos de ~9s entre líneas. Es
   gratis subirla porque entra dentro del retraso de respuesta.
