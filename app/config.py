@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, time
 from functools import lru_cache
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, field_validator, model_validator
@@ -23,6 +24,7 @@ CREDENCIALES_OPCIONALES = (
 )
 
 _HORARIO = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-3]):([0-5]\d)$")
+_PREFIJO = re.compile(r"^\+\d{1,3}$")
 
 
 class Settings(BaseSettings):
@@ -46,7 +48,14 @@ class Settings(BaseSettings):
 
     ventana_buffer_seg: int = Field(default=6, gt=0, le=120)
     horario_atencion: str = "09:00-18:00"
-    tz: str = "America/Argentina/Buenos_Aires"
+
+    # El cliente opera en Quito. La zona horaria no es un detalle de formato:
+    # el horario de atencion y el agendado de la tarea de llamado se evaluan
+    # siempre en hora de Ecuador, nunca en la del servidor (Railway corre en UTC).
+    tz: str = "America/Guayaquil"
+    pais: str = "EC"
+    prefijo_telefonico: str = "+593"
+
     log_level: str = "INFO"
 
     @field_validator("database_url")
@@ -56,6 +65,20 @@ class Settings(BaseSettings):
             raise ValueError(
                 "DATABASE_URL tiene que empezar con postgresql:// o postgres://"
             )
+        # El dashboard de Supabase muestra la clave como [YOUR-PASSWORD]. Si se
+        # reemplaza el texto pero quedan los corchetes, o se pierde el ':' entre
+        # usuario y clave, urlparse revienta con un ValueError sobre direcciones
+        # IPv6 que no tiene nada que ver con el problema real.
+        try:
+            partes = urlparse(valor)
+            host = partes.hostname
+        except ValueError as e:
+            raise ValueError(
+                "DATABASE_URL mal formada. Revisar que no hayan quedado los "
+                "corchetes de [YOUR-PASSWORD] y que haya ':' entre usuario y clave"
+            ) from e
+        if not host:
+            raise ValueError("DATABASE_URL no tiene host")
         return valor
 
     @field_validator("horario_atencion")
@@ -66,6 +89,21 @@ class Settings(BaseSettings):
         inicio, fin = (time.fromisoformat(p) for p in valor.split("-"))
         if inicio >= fin:
             raise ValueError("HORARIO_ATENCION: la hora de inicio tiene que ser menor a la de fin")
+        return valor
+
+    @field_validator("pais")
+    @classmethod
+    def _validar_pais(cls, valor: str) -> str:
+        codigo = valor.upper()
+        if len(codigo) != 2 or not codigo.isalpha():
+            raise ValueError("PAIS tiene que ser un codigo ISO de dos letras, por ejemplo EC")
+        return codigo
+
+    @field_validator("prefijo_telefonico")
+    @classmethod
+    def _validar_prefijo(cls, valor: str) -> str:
+        if not _PREFIJO.match(valor):
+            raise ValueError("PREFIJO_TELEFONICO tiene que ser + seguido de 1 a 3 digitos, por ejemplo +593")
         return valor
 
     @field_validator("log_level")

@@ -5,13 +5,11 @@ que aparecen los datos.
 
 ## Bloqueantes
 
-- [ ] **Verificar las migraciones contra una base real.** En la máquina de
-  desarrollo no hay Postgres, ni psql, ni Docker, y `catalogo` necesita la
-  extensión `pgvector`. Hasta resolverlo no se escriben `migrations/` ni
-  `db.py`: quedarían sin forma de verificarse. Opciones: `brew install
-  postgresql@16 pgvector` local, o la `DATABASE_URL` de Supabase.
-- [ ] **`DATABASE_URL` de Supabase.** Bloquea `db.py`, migraciones, worker,
-  buffer de mensajes y todo lo que persiste.
+- [ ] **Con qué se generan los embeddings del catálogo.** CLAUDE.md fija
+  `vector(1536)` pero no el proveedor, y Anthropic no tiene API de embeddings
+  propia. 1536 es el tamaño de `text-embedding-3-small` de OpenAI. Si se usa
+  otro proveedor cambia la dimensión y hay que ajustar la migración. Bloquea
+  `agente/catalogo.py` (sesión 4), no la sesión 1.
 - [ ] **Qué BSP de WhatsApp se usa** (360dialog, Gupshup, Meta directo, otro).
   Bloquea `webhook.py` (esquema del payload y validación de firma) y
   `whatsapp/cliente.py` (endpoints de envío, indicador de "escribiendo").
@@ -22,11 +20,22 @@ que aparecen los datos.
 - [ ] **Credenciales**: `ANTHROPIC_API_KEY`, `KOMMO_ACCESS_TOKEN`,
   `BSP_TOKEN`, `BSP_WEBHOOK_SECRET`.
 
+## Resueltos
+
+- [x] **`DATABASE_URL` de Supabase.** Proyecto en `us-west-2`. Se conecta por el
+  Session pooler (`aws-0-us-west-2.pooler.supabase.com:5432`, usuario
+  `postgres.<ref>`); el host directo solo tiene IPv6 y no resuelve desde acá.
+  Migración `001_inicial.sql` aplicada, pgvector 0.8.2.
+
 ## Decisiones a confirmar con el cliente
 
 - [ ] A quién y por qué medio se notifica un `escalar_a_humano`.
 - [ ] Cómo se detecta que un vendedor contestó manualmente desde el número,
-  para pasar la conversación a `pausada` (depende del BSP).
+  para pasar la conversación a `pausada` (depende del BSP). El esquema ya lo
+  contempla: `mensajes.rol = 'vendedor'`.
+- [ ] Horario de atención real, en hora de Ecuador. Por ahora 09:00–18:00 de
+  lunes a viernes, que es un default, no un dato del cliente.
+- [ ] Manejo del riesgo de rotura térmica (ver CLAUDE.md).
 
 ## Módulos que se pueden avanzar sin nada de lo anterior
 

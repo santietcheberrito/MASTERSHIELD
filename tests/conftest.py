@@ -1,10 +1,18 @@
 """Fixtures compartidas."""
 
+import asyncio
 import os
+import socket
+from pathlib import Path
+from urllib.parse import urlparse
 
+import asyncpg
 import pytest
 
+from app import db
 from app.config import CREDENCIALES_OPCIONALES
+
+RAIZ = Path(__file__).resolve().parent.parent
 
 # Variables que Settings lee del entorno. Se limpian en cada test para que la
 # maquina del que corre los tests no cambie el resultado.
@@ -13,9 +21,80 @@ VARIABLES = (
     "VENTANA_BUFFER_SEG",
     "HORARIO_ATENCION",
     "TZ",
+    "PAIS",
+    "PREFIJO_TELEFONICO",
     "LOG_LEVEL",
     *(c.upper() for c in CREDENCIALES_OPCIONALES),
 )
+
+
+class BaseDePrueba:
+    """Envuelve el DSN para que no se filtre en la salida de pytest.
+
+    Cuando un test recibe una fixture y falla, pytest imprime el valor del
+    argumento en el encabezado del error. Con el DSN crudo eso deja la clave de
+    la base en la consola y en el log de CI.
+    """
+
+    def __init__(self, url: str) -> None:
+        self.url = url
+
+    @property
+    def host(self) -> str:
+        return urlparse(self.url).hostname or "?"
+
+    def __repr__(self) -> str:
+        return f"<base {self.host}>"
+
+
+def _dsn_para_tests() -> str | None:
+    """DSN de una base real, si hay alguna a mano.
+
+    Se resuelve al importar el modulo y no dentro de una fixture, porque
+    `entorno_limpio` borra DATABASE_URL del entorno antes de cada test.
+    """
+    for variable in ("DATABASE_URL_TEST", "DATABASE_URL"):
+        if os.environ.get(variable):
+            return os.environ[variable]
+
+    archivo = RAIZ / ".env"
+    if archivo.exists():
+        for linea in archivo.read_text(encoding="utf-8").splitlines():
+            linea = linea.strip()
+            if linea.startswith("DATABASE_URL=") and not linea.startswith("#"):
+                valor = linea.split("=", 1)[1].strip().strip('"').strip("'")
+                if valor:
+                    return valor
+    return None
+
+
+DSN = _dsn_para_tests()
+
+
+def _motivo_para_saltear(url: str) -> str | None:
+    """Prueba una conexion. Devuelve el motivo del skip, o None si la base sirve.
+
+    "No hay base a mano" se saltea; "la base contesta pero rechaza" no. Una
+    clave mal puesta o un esquema sin migrar tienen que romper los tests, no
+    esconderse detras de un skip verde.
+    """
+    async def _conectar() -> None:
+        conexion = await asyncpg.connect(url, statement_cache_size=0, timeout=10)
+        await conexion.close()
+
+    try:
+        asyncio.run(_conectar())
+    except (socket.gaierror, ConnectionRefusedError, asyncio.TimeoutError, TimeoutError) as e:
+        host = urlparse(url).hostname or "?"
+        return f"la base no esta disponible ({host}): {type(e).__name__}"
+    except OSError as e:
+        host = urlparse(url).hostname or "?"
+        return f"la base no esta disponible ({host}): {e.strerror or e}"
+    return None
+
+
+_motivo_cacheado: str | None = None
+_ya_probado = False
 
 
 @pytest.fixture(autouse=True)
@@ -25,6 +104,39 @@ def entorno_limpio(monkeypatch):
 
 
 @pytest.fixture
-def database_url() -> str | None:
-    """URL de una base real, si el que corre los tests la puso en el entorno."""
-    return os.environ.get("DATABASE_URL_TEST")
+def base() -> BaseDePrueba:
+    global _motivo_cacheado, _ya_probado
+
+    if not DSN:
+        pytest.skip("sin DATABASE_URL: se saltean los tests marcados con `db`")
+
+    if not _ya_probado:
+        _motivo_cacheado = _motivo_para_saltear(DSN)
+        _ya_probado = True
+
+    if _motivo_cacheado:
+        pytest.skip(_motivo_cacheado)
+
+    return BaseDePrueba(DSN)
+
+
+@pytest.fixture
+async def conexion(base):
+    """Conexion dentro de una transaccion que siempre se revierte.
+
+    Estos tests pueden correr contra la base real del cliente, asi que nada de
+    lo que escriben tiene que quedar. El rollback lo garantiza incluso si el
+    test falla a la mitad.
+    """
+    conn = await asyncpg.connect(base.url, statement_cache_size=0)
+    # Los mismos codecs que registra el pool de la app: sin esto los tests
+    # verian `conversaciones.datos` como str y no como dict, que no es como lo
+    # va a ver el codigo que corre en produccion.
+    await db._inicializar_conexion(conn)
+    transaccion = conn.transaction()
+    await transaccion.start()
+    try:
+        yield conn
+    finally:
+        await transaccion.rollback()
+        await conn.close()

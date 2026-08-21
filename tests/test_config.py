@@ -18,7 +18,9 @@ def test_valores_por_defecto():
     s = armar()
     assert s.ventana_buffer_seg == 6
     assert s.horario_atencion == "09:00-18:00"
-    assert s.tz == "America/Argentina/Buenos_Aires"
+    assert s.tz == "America/Guayaquil"
+    assert s.pais == "EC"
+    assert s.prefijo_telefonico == "+593"
     assert s.log_level == "INFO"
 
 
@@ -40,6 +42,26 @@ def test_database_url_es_obligatoria():
 def test_database_url_invalida(valor):
     with pytest.raises(ValidationError):
         Settings(_env_file=None, database_url=valor)
+
+
+@pytest.mark.parametrize(
+    "valor",
+    [
+        # Los corchetes del placeholder [YOUR-PASSWORD] que quedaron pegados.
+        "postgresql://postgres[clave123!]@db.abc.supabase.co:5432/postgres",
+        "postgresql://postgres:[clave123!]@db.abc.supabase.co:5432/postgres",
+    ],
+)
+def test_database_url_con_corchetes_del_placeholder(valor):
+    """Pasa el chequeo del esquema pero rompe urlparse con un error sobre IPv6
+    que no tiene nada que ver. Tiene que fallar aca y con un mensaje util."""
+    with pytest.raises(ValidationError, match="corchetes"):
+        Settings(_env_file=None, database_url=valor)
+
+
+def test_database_url_sin_host():
+    with pytest.raises(ValidationError, match="host"):
+        Settings(_env_file=None, database_url="postgresql:///base")
 
 
 @pytest.mark.parametrize("valor", [0, -1, 121])
@@ -79,8 +101,32 @@ def test_tz_invalida():
         armar(tz="America/Buenos_Aires_Inventada")
 
 
-def test_zona_es_la_de_buenos_aires():
-    assert armar().zona == ZoneInfo("America/Argentina/Buenos_Aires")
+def test_zona_es_la_de_quito():
+    """El cliente es ecuatoriano. Si esto vuelve a Argentina, el horario de
+    atencion y el agendado de llamados quedan corridos una hora."""
+    assert armar().zona == ZoneInfo("America/Guayaquil")
+
+
+@pytest.mark.parametrize("valor", ["EC", "ec", "Ec"])
+def test_pais_se_normaliza_a_mayusculas(valor):
+    assert armar(pais=valor).pais == "EC"
+
+
+@pytest.mark.parametrize("valor", ["ECU", "E", "", "5", "E1"])
+def test_pais_invalido(valor):
+    with pytest.raises(ValidationError):
+        armar(pais=valor)
+
+
+@pytest.mark.parametrize("valor", ["+593", "+54", "+1"])
+def test_prefijo_valido(valor):
+    assert armar(prefijo_telefonico=valor).prefijo_telefonico == valor
+
+
+@pytest.mark.parametrize("valor", ["593", "+", "+5934", "++593", "+59a", ""])
+def test_prefijo_invalido(valor):
+    with pytest.raises(ValidationError):
+        armar(prefijo_telefonico=valor)
 
 
 def test_credenciales_faltantes():
@@ -116,12 +162,18 @@ def test_esta_en_horario(momento, esperado):
 
 
 def test_esta_en_horario_convierte_zona():
-    """Un momento en UTC se evalua contra la hora de Buenos Aires (UTC-3)."""
+    """Un momento en UTC se evalua contra la hora de Quito (UTC-5).
+
+    El primer caso es el que atrapa una vuelta accidental a la zona argentina:
+    a las 13:00 UTC en Ecuador son las 08:00 y todavia no abrieron, pero en
+    Buenos Aires serian las 10:00 y daria dentro de horario.
+    """
     s = armar()
-    # 23:00 UTC del miercoles son las 20:00 en Buenos Aires: fuera de horario.
+    assert s.esta_en_horario(datetime(2025, 8, 13, 13, 0, tzinfo=ZoneInfo("UTC"))) is False
+    # 15:00 UTC son las 10:00 en Quito: dentro.
+    assert s.esta_en_horario(datetime(2025, 8, 13, 15, 0, tzinfo=ZoneInfo("UTC"))) is True
+    # 23:00 UTC son las 18:00 en Quito: el limite superior queda afuera.
     assert s.esta_en_horario(datetime(2025, 8, 13, 23, 0, tzinfo=ZoneInfo("UTC"))) is False
-    # 13:00 UTC son las 10:00 en Buenos Aires: dentro.
-    assert s.esta_en_horario(datetime(2025, 8, 13, 13, 0, tzinfo=ZoneInfo("UTC"))) is True
 
 
 def test_obtener_settings_cachea(monkeypatch):
