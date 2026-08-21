@@ -58,7 +58,10 @@ class Settings(BaseSettings):
     # off: no se escucha Telegram.
     telegram_modo: str = "polling"
 
-    ventana_buffer_seg: int = Field(default=6, gt=0, le=120)
+    # 30s y no 6: desde que el cliente pidio un retraso de 1-2 minutos antes de
+    # responder, recolectar mensajes durante mas tiempo sale gratis. La ventana
+    # va DENTRO de ese presupuesto, no encima. Ver "Humanizacion" en CLAUDE.md.
+    ventana_buffer_seg: int = Field(default=30, gt=0, le=120)
     horario_atencion: str = "09:00-18:00"
 
     # El cliente opera en Quito. La zona horaria no es un detalle de formato:

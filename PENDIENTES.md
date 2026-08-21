@@ -30,17 +30,45 @@ que aparecen los datos.
 
 ## Calibración pendiente
 
-- [ ] **`VENTANA_BUFFER_SEG`**. Está en 8. En dos pruebas reales los mensajes
-  llegaron con huecos de 9.1s y 8.9s, o sea justo en el borde. Subirla evita
-  cortar ráfagas pero retrasa toda respuesta, incluso la de un mensaje suelto.
-  El número sale de las 20 conversaciones de prueba con el equipo del cliente.
-- [ ] **Supersesión de respuestas (sesión 6).** Si llega un mensaje mientras el
-  agente redacta, hay que descartar esa respuesta y rehacer el turno. Es el
-  arreglo bueno del problema de arriba: con supersesión, una ventana corta deja
-  de ser riesgosa. El worker ya detecta el caso y vuelve a encolar.
+- [x] **`VENTANA_BUFFER_SEG`**. Movida a 30s. Con 6 las ráfagas se partían:
+  medido con mensajes reales, la gente deja huecos de ~9s entre líneas. Es
+  gratis subirla porque entra dentro del retraso de respuesta.
+- [ ] **`VENTANA_BUFFER_SEG` final.** Los 30s son una estimación con una sola
+  persona probando. El número sale de las 20 conversaciones de prueba con el
+  equipo del cliente.
+- [ ] **Supersesión de respuestas.** Pasa a ser obligatoria, no opcional: con
+  un retraso de 60–120s, que el cliente escriba mientras hay una respuesta
+  esperando es lo esperable, no un caso de borde. El worker ya detecta la
+  carrera y reencola; falta cancelar la respuesta en vuelo.
 - [ ] **`/start` de Telegram** llega como un mensaje de texto cualquiera. El
   prompt de la sesión 4 tiene que tratarlo como saludo inicial y no responderlo
   literalmente.
+
+## Decidido por el cliente, a implementar en la sesión 6
+
+**Retraso de respuesta de 1–2 minutos**, para dar realismo. Parámetros ya
+cerrados con el cliente:
+
+| Parámetro | Valor | Nota |
+|---|---|---|
+| `DEMORA_RESPUESTA_MIN_SEG` | 60 | sorteado por turno, no fijo |
+| `DEMORA_RESPUESTA_MAX_SEG` | 120 | |
+| Aplica a la primera respuesta | **sí** | decisión explícita del cliente |
+| `VENTANA_BUFFER_SEG` | 30 | va **dentro** del retraso, no encima |
+
+Cómo se mide: desde el **último** mensaje del cliente hasta el **primer**
+mensaje del agente. La recolección de 30s y el tiempo que tarda el agente en
+producir la respuesta se descuentan de ese total; si se sumaran, el peor caso
+serían 150s y dejaría de ser "1 a 2 minutos".
+
+El indicador de "escribiendo" va solo en los últimos segundos antes de enviar.
+
+**Riesgo asentado.** Le planteé al cliente que dos minutos de silencio en la
+*primera* respuesta es donde más gente se pierde, y que un vendedor real
+contesta rápido una vez que tiene el chat abierto. El cliente eligió igual
+aplicar el retraso siempre, sin excepción. Queda anotado para poder revisarlo
+con datos después de las 20 conversaciones de prueba: si hay abandono en el
+primer mensaje, este es el primer parámetro a mirar.
 
 ## Decisiones a confirmar con el cliente
 

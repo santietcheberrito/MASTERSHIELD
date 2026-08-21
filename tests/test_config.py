@@ -16,7 +16,7 @@ def armar(**extra) -> Settings:
 
 def test_valores_por_defecto():
     s = armar()
-    assert s.ventana_buffer_seg == 6
+    assert s.ventana_buffer_seg == 30
     assert s.horario_atencion == "09:00-18:00"
     assert s.tz == "America/Guayaquil"
     assert s.pais == "EC"

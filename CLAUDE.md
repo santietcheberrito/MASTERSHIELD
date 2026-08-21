@@ -112,9 +112,14 @@ La gente escribe en ráfagas: "buenas" / "necesito lámina" / "para una
 oficina en Cumbayá". Responder a cada uno delata el bot al instante.
 
 Al llegar un mensaje se hace `UPSERT` en `pendientes` con
-`procesar_despues = now() + VENTANA_BUFFER` (default 6 segundos). Cada
+`procesar_despues = now() + VENTANA_BUFFER` (default **30 segundos**). Cada
 mensaje nuevo **reinicia** el timer. El worker procesa recién cuando
 la ventana venció, tomando todos los mensajes acumulados como un solo turno.
+
+La ventana es larga porque desde que el cliente pidió el retraso de 1–2 minutos
+antes de responder, recolectar durante más tiempo no cuesta nada: entra dentro
+de ese presupuesto. Con 6 segundos las ráfagas lentas se partían — medido con
+mensajes reales, la gente deja huecos de ~9 segundos entre líneas.
 
 Va en base de datos, no en memoria, porque Railway reinicia el proceso
 en cada deploy.
@@ -244,9 +249,27 @@ Requisito central del proyecto. Reglas duras:
 
 - Respuestas cortas. Máximo ~2 líneas por mensaje.
 - Si la respuesta es larga, partirla en 2–3 mensajes con pausas entre medio.
-- Delay antes de enviar proporcional al largo del texto, con variación
-  aleatoria (aprox. 25–40 caracteres por segundo, mínimo 1.5s, máximo 7s).
-- Indicador de "escribiendo" si el BSP lo soporta.
+
+**Hay dos escalas de tiempo distintas y no hay que confundirlas.**
+
+1. **Retraso de respuesta: 60–120 segundos**, decidido por el cliente para dar
+   realismo. Se mide desde el último mensaje del cliente hasta el primer
+   mensaje del agente, y la ventana de recolección va **dentro** de ese
+   presupuesto, no encima: si se sumaran, el peor caso serían 150 segundos y
+   dejaría de ser "1 a 2 minutos". Aplica siempre, también a la primera
+   respuesta de una conversación. El valor se sortea por turno, con variación
+   real: un retraso fijo es un patrón detectable.
+2. **Pausa entre mensajes partidos: 1.5–7 segundos**, proporcional al largo del
+   texto (aprox. 25–40 caracteres por segundo). Es el tiempo que tarda una
+   persona en tipear la línea siguiente.
+
+- Indicador de "escribiendo" solo en los últimos segundos antes de enviar.
+  Nadie tipea durante dos minutos: dejarlo prendido todo el retraso delata
+  tanto como no ponerlo.
+- **Supersesión obligatoria.** Si llega un mensaje del cliente mientras hay una
+  respuesta esperando a ser enviada, esa respuesta se descarta y el turno se
+  rehace con todo. Con un retraso de 90 segundos esto no es un caso de borde:
+  es lo que va a pasar seguido.
 - **Español de Ecuador. Trato de usted, nunca voseo ni tuteo.** Registro
   formal pero cálido, como el del documento de preguntas frecuentes del
   cliente. Un agente que vosea delata al instante que no es de ahí.
@@ -311,7 +334,9 @@ KOMMO_ACCESS_TOKEN=
 BSP_API_URL=
 BSP_TOKEN=
 BSP_WEBHOOK_SECRET=
-VENTANA_BUFFER_SEG=6
+VENTANA_BUFFER_SEG=30
+DEMORA_RESPUESTA_MIN_SEG=60
+DEMORA_RESPUESTA_MAX_SEG=120
 HORARIO_ATENCION=09:00-18:00
 TZ=America/Guayaquil
 PAIS=EC

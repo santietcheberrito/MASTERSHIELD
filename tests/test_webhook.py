@@ -68,7 +68,7 @@ def test_update_valido_se_registra(cliente, registrados):
     mensaje, ventana = registrados[0]
     assert mensaje.identificador == "7"
     assert mensaje.id_externo == "telegram:7:42"
-    assert ventana == 6, "el default de VENTANA_BUFFER_SEG"
+    assert ventana == 30, "el default de VENTANA_BUFFER_SEG"
 
 
 def test_update_que_no_es_mensaje_se_acepta_sin_registrar(cliente, registrados):
