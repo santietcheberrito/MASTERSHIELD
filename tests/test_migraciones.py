@@ -16,9 +16,11 @@ pytestmark = pytest.mark.db
 TABLAS = ("conversaciones", "mensajes", "pendientes", "catalogo", "eventos")
 
 
-async def _crear_conversacion(conexion, telefono="+593999000001") -> int:
+async def _crear_conversacion(conexion, identificador="+593999000001", canal="whatsapp") -> int:
     return await conexion.fetchval(
-        "INSERT INTO conversaciones (telefono) VALUES ($1) RETURNING id", telefono
+        "INSERT INTO conversaciones (canal, identificador) VALUES ($1, $2) RETURNING id",
+        canal,
+        identificador,
     )
 
 
@@ -49,18 +51,42 @@ async def test_todas_las_marcas_de_tiempo_son_timestamptz(conexion):
 
 # --- conversaciones ---------------------------------------------------------
 
-async def test_el_telefono_es_unico(conexion):
+async def test_canal_mas_identificador_es_unico(conexion):
+    """Dos mensajes simultaneos del mismo contacto no pueden crear dos
+    conversaciones."""
     await _crear_conversacion(conexion)
     with pytest.raises(asyncpg.UniqueViolationError):
         await _crear_conversacion(conexion)
 
 
+async def test_el_mismo_identificador_en_dos_canales_convive(conexion):
+    """Un chat_id de Telegram y un telefono de WhatsApp podrian coincidir."""
+    primero = await _crear_conversacion(conexion, "123", canal="whatsapp")
+    segundo = await _crear_conversacion(conexion, "123", canal="telegram")
+    assert primero != segundo
+
+
+async def test_el_telefono_puede_faltar(conexion):
+    """En Telegram no viene en el payload: se releva durante la conversacion.
+    Sin telefono no hay a quien llamar, y eso es informacion, no un error."""
+    id_conv = await _crear_conversacion(conexion, "7", canal="telegram")
+    assert await conexion.fetchval(
+        "SELECT telefono FROM conversaciones WHERE id = $1", id_conv
+    ) is None
+
+
 async def test_estado_invalido_se_rechaza(conexion):
     with pytest.raises(asyncpg.CheckViolationError):
         await conexion.execute(
-            "INSERT INTO conversaciones (telefono, estado) VALUES ($1, 'inventado')",
+            "INSERT INTO conversaciones (canal, identificador, estado) "
+            "VALUES ('whatsapp', $1, 'inventado')",
             "+593999000002",
         )
+
+
+async def test_canal_invalido_se_rechaza(conexion):
+    with pytest.raises(asyncpg.CheckViolationError):
+        await _crear_conversacion(conexion, "7", canal="señales de humo")
 
 
 async def test_datos_arranca_vacio_y_guarda_dict(conexion):
@@ -107,24 +133,24 @@ async def test_trigger_toca_actualizada_en(conexion):
 
 # --- mensajes ---------------------------------------------------------------
 
-async def test_wa_message_id_repetido_no_entra_dos_veces(conexion):
+async def test_id_externo_repetido_no_entra_dos_veces(conexion):
     """Asi deduplica el webhook: sin SELECT previo, que tendria carrera si el
     BSP reintenta en paralelo."""
     id_conv = await _crear_conversacion(conexion)
     sql = """
-        INSERT INTO mensajes (conversacion_id, rol, contenido, wa_message_id)
+        INSERT INTO mensajes (conversacion_id, rol, contenido, id_externo)
         VALUES ($1, 'cliente', $2, $3)
-        ON CONFLICT (wa_message_id) DO NOTHING
+        ON CONFLICT (id_externo) DO NOTHING
         RETURNING id
     """
-    primero = await conexion.fetchval(sql, id_conv, "buenas", "wamid.ABC")
-    segundo = await conexion.fetchval(sql, id_conv, "buenas", "wamid.ABC")
+    primero = await conexion.fetchval(sql, id_conv, "buenas", "whatsapp:wamid.ABC")
+    segundo = await conexion.fetchval(sql, id_conv, "buenas", "whatsapp:wamid.ABC")
 
     assert primero is not None
     assert segundo is None, "el reintento del BSP no debe crear un segundo mensaje"
 
 
-async def test_varios_mensajes_del_agente_sin_wa_message_id(conexion):
+async def test_varios_mensajes_del_agente_sin_id_externo(conexion):
     """El indice unico acepta NULL repetido: los mensajes salientes todavia no
     tienen id del BSP cuando se guardan."""
     id_conv = await _crear_conversacion(conexion)

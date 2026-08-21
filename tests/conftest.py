@@ -10,7 +10,7 @@ import asyncpg
 import pytest
 
 from app import db
-from app.config import CREDENCIALES_OPCIONALES
+from app.config import CREDENCIALES_OPCIONALES, Settings
 
 RAIZ = Path(__file__).resolve().parent.parent
 
@@ -23,6 +23,8 @@ VARIABLES = (
     "TZ",
     "PAIS",
     "PREFIJO_TELEFONICO",
+    "TELEGRAM_MODO",
+    "TELEGRAM_WEBHOOK_SECRET",
     "LOG_LEVEL",
     *(c.upper() for c in CREDENCIALES_OPCIONALES),
 )
@@ -99,8 +101,15 @@ _ya_probado = False
 
 @pytest.fixture(autouse=True)
 def entorno_limpio(monkeypatch):
+    """Aisla a Settings de la maquina: ni variables de entorno ni .env.
+
+    Limpiar solo el entorno no alcanzaba: Settings lee `.env`, asi que cambiar
+    ahi VENTANA_BUFFER_SEG rompia un test que no tenia nada que ver. El valor
+    que usa un test tiene que estar escrito en el test.
+    """
     for variable in VARIABLES:
         monkeypatch.delenv(variable, raising=False)
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
 
 
 @pytest.fixture
@@ -140,3 +149,40 @@ async def conexion(base):
     finally:
         await transaccion.rollback()
         await conn.close()
+
+
+class _Adquisicion:
+    """Imita `pool.acquire()` devolviendo siempre la misma conexion."""
+
+    def __init__(self, conexion):
+        self._conexion = conexion
+
+    async def __aenter__(self):
+        return self._conexion
+
+    async def __aexit__(self, *_):
+        return False
+
+
+class _PoolFalso:
+    def __init__(self, conexion):
+        self._conexion = conexion
+
+    def acquire(self):
+        return _Adquisicion(self._conexion)
+
+
+@pytest.fixture
+def pool_en_transaccion(conexion, monkeypatch):
+    """Hace que `db.pool()` devuelva la conexion de test.
+
+    `ingesta` y `worker` usan el pool del modulo, no una conexion suelta. Sin
+    esto habria que dejarlos escribir de verdad y limpiar despues, con el riesgo
+    de olvidarse algo en la base del cliente. Asi todo lo que escriben queda
+    dentro de la transaccion que se revierte al terminar el test.
+
+    Ojo con una consecuencia: dentro de una transaccion `now()` no avanza, asi
+    que las ventanas de tiempo se manejan con valores explicitos.
+    """
+    monkeypatch.setattr(db, "pool", lambda: _PoolFalso(conexion))
+    return conexion

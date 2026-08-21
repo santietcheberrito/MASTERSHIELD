@@ -45,6 +45,19 @@ transacción, y queda registrado en la tabla `migraciones`.
 .venv/bin/uvicorn app.main:app --reload
 ```
 
+### Canales
+
+Telegram es el canal de la etapa de pruebas; WhatsApp Cloud API entra después.
+`TELEGRAM_MODO` decide cómo se reciben los mensajes:
+
+- `polling` — `getUpdates`, sin URL pública. Es lo cómodo para desarrollar.
+- `webhook` — Telegram pega en `POST /webhook/telegram`. Necesita URL pública y
+  `TELEGRAM_WEBHOOK_SECRET`, el mismo valor que se registró con `setWebhook`.
+- `off` — no se escucha Telegram.
+
+No se pueden usar los dos a la vez: con un webhook registrado, Telegram rechaza
+`getUpdates`.
+
 `GET /health` devuelve 200 si la base responde y 503 si no. El proceso levanta
 igual con la base caída, a propósito: así el healthcheck distingue "el deploy
 no arrancó" de "la base no responde".
@@ -80,7 +93,9 @@ Ver [PENDIENTES.md](PENDIENTES.md) para lo que falta y qué bloquea cada cosa.
 | `app/db.py` | listo, con tests |
 | `migrations/001_inicial.sql` + `scripts/migrar.py` | listo, aplicado contra Supabase |
 | `app/main.py` (`/health`) | listo, con tests |
-| `app/webhook.py` + `app/worker.py` | sesión 2 |
+| `app/webhook.py` + `app/worker.py` + `app/ingesta.py` | listo, probado con Telegram real |
+| `app/canales/` (Telegram) | listo, con tests |
+| `app/canales/` (WhatsApp Cloud API) | falta: sin credenciales de Meta |
 | `app/kommo/` | sesión 3 |
 | `app/agente/` | sesión 4 |
 | `app/scoring.py` | sesión 5, requiere kick off |

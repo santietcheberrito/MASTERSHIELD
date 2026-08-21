@@ -138,7 +138,7 @@ def test_credenciales_faltantes():
 
 
 def test_sin_credenciales_faltan_todas():
-    assert len(armar().credenciales_faltantes) == 6
+    assert len(armar().credenciales_faltantes) == 7
 
 
 @pytest.mark.parametrize(

@@ -16,6 +16,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # faltan para que no se descubra recien cuando falla una llamada.
 CREDENCIALES_OPCIONALES = (
     "anthropic_api_key",
+    "telegram_bot_token",
     "kommo_subdomain",
     "kommo_access_token",
     "bsp_api_url",
@@ -45,6 +46,17 @@ class Settings(BaseSettings):
     bsp_api_url: str = ""
     bsp_token: str = ""
     bsp_webhook_secret: str = ""
+
+    # Telegram es el canal de la etapa de pruebas, antes de conectar la Cloud
+    # API de WhatsApp.
+    telegram_bot_token: str = ""
+    # Solo hace falta en modo webhook: es el valor que Telegram devuelve en la
+    # cabecera X-Telegram-Bot-Api-Secret-Token, tal cual se registro en setWebhook.
+    telegram_webhook_secret: str = ""
+    # polling: getUpdates, sin URL publica, para desarrollo local.
+    # webhook: Telegram nos pega, hace falta URL publica. Es lo de produccion.
+    # off: no se escucha Telegram.
+    telegram_modo: str = "polling"
 
     ventana_buffer_seg: int = Field(default=6, gt=0, le=120)
     horario_atencion: str = "09:00-18:00"
@@ -105,6 +117,14 @@ class Settings(BaseSettings):
         if not _PREFIJO.match(valor):
             raise ValueError("PREFIJO_TELEFONICO tiene que ser + seguido de 1 a 3 digitos, por ejemplo +593")
         return valor
+
+    @field_validator("telegram_modo")
+    @classmethod
+    def _validar_telegram_modo(cls, valor: str) -> str:
+        modo = valor.lower()
+        if modo not in {"polling", "webhook", "off"}:
+            raise ValueError("TELEGRAM_MODO tiene que ser polling, webhook u off")
+        return modo
 
     @field_validator("log_level")
     @classmethod
