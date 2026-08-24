@@ -21,35 +21,13 @@ que aparecen los datos.
 Sin esto el agente no se puede escribir: son datos de negocio, no decisiones
 técnicas, y `CLAUDE.md` prohíbe inventarlos.
 
-### 1. Los 4 productos y la matriz de precios
+### 1. Precios · cargados
 
-El precio por m² **varía según la región del país**, así que no alcanza una
-lista: hace falta una tabla. Formato que necesito, una fila por producto y una
-columna por región:
-
-Los cuatro productos ya están anotados en `config/productos.yaml` con los
-nombres del sitio del cliente. Falta el precio:
-
-| Producto | Región A | Región B | ... |
-|---|---|---|---|
-| Lámina de Control Solar Arquitectónico | USD/m² | USD/m² | |
-| Lámina de Privacidad Arquitectónica | | | |
-| Lámina de Seguridad Arquitectónica | | | |
-| Lámina de Seguridad Vehicular | | | |
-
-Preguntas que definen la tabla:
-
-- [ ] **¿Cuáles son las regiones?** ¿Sierra / Costa / Amazonía, o por ciudad
-  (Quito, Guayaquil, Cuenca...), o "Quito y alrededores" contra "resto del
-  país"? De esto depende con qué granularidad el agente tiene que relevar
-  `zona`, que además es el eje de calificación más fuerte.
-- [ ] **¿El precio incluye instalación o es solo material?**
-- [ ] **¿Incluye IVA?** En Ecuador es 15%. Si el agente dice "son 400" y llegan
-  460, es un problema con el cliente, no un detalle de redacción.
-- [ ] **¿Está en dólares?** Ecuador está dolarizado, pero prefiero confirmarlo.
-- [ ] **La variación regional, ¿es solo del precio por m²?** `CLAUDE.md`
-  menciona montos mínimos de instalación fuera de Quito: ¿siguen existiendo
-  aparte, o quedaron absorbidos en el precio por región?
+- [x] Matriz de precios cargada en `config/productos.yaml` y verificada con 25
+  tests. El agente ya cotiza control solar, privacidad y seguridad.
+- [ ] Falta el criterio del precio especial, la base del descuento del 10%, si
+  el recargo de otras ciudades aplica a seguridad, y qué valles cuentan como
+  Quito. Ver `docs/consultas-al-cliente.md`.
 
 ### 2. El mínimo de 5 m²
 
@@ -57,10 +35,13 @@ Ya confirmado: no venden menos de 5 m². Lo aplica el código, no el prompt, par
 que el modelo no "haga una excepción" porque el cliente insistió. Cuando no se
 llega, el agente propone sumar otro sector en vez de cortar.
 
-- [ ] **¿Es por producto o por pedido?** Si alguien quiere 3 m² de una lámina
-  y 4 m² de otra, ¿son 7 y se puede, o no llega ninguno de los dos?
-- [ ] **¿Aplica a la línea vehicular?** Ahí los metros no son la unidad
-  natural: se cotiza por vehículo.
+- [x] **Por pedido, y se puede combinar productos.** 3 m² de una lámina más
+  4 m² de otra suman 7 y el trabajo se hace.
+- [x] **Vehicular no usa metros.** Se releva modelo de vehículo y nivel de
+  seguridad, y cotiza un asesor.
+- [x] **Fuera de Quito el mínimo es 20 m²**, cuatro veces el de Quito. Es el
+  filtro de calificación más duro del negocio y hay que reflejarlo en el
+  scoring.
 
 ### 3. El documento de preguntas frecuentes
 

@@ -7,33 +7,45 @@ Nada de esto se puede deducir ni estimar. Son datos de negocio.
 
 ---
 
-## 1. Precios · BLOQUEA
+## 1. Precios · lo que falta después de la última respuesta
 
-Sin esto no existe la herramienta que cotiza.
+Ya está cargado: $42 y $32 más IVA para control solar y privacidad según
+garantía, $24 más IVA de piso para seguridad, $10 más IVA adicional por m²
+fuera de Quito, mínimos de 5 y 20 m², descuento del 10% por efectivo o
+transferencia, y que el precio incluye instalación, traslado, andamios y
+limpieza previa. Con eso el agente ya cotiza.
 
-- **Valor por m² de cada uno de los 4 productos.**
-- **¿Cuáles son las regiones?** El precio varía por región del país, pero no sé
-  si son Sierra / Costa / Amazonía, si es por ciudad, o si es "Quito y
-  alrededores" contra "resto del país". Necesito la lista y el precio de cada
-  producto en cada una.
-- **¿El precio incluye la instalación o es solo el material?**
-- **¿Incluye IVA?** Es 15%. Si el agente dice "son 400" y al cliente le llegan
-  460, es un problema con un cliente real, no un detalle de redacción.
-- **¿Está en dólares?**
-- **Roof Shield®** (control solar para instalación exterior en pérgolas):
-  ¿tiene el mismo precio que el control solar normal o uno distinto?
-- **Fuera de Quito hay montos mínimos de instalación por ciudad.** ¿Cuáles son?
-  ¿Siguen existiendo aparte del precio por región, o ya están incluidos ahí?
+Falta esto:
 
-## 2. El mínimo de venta · BLOQUEA
+- **¿Qué determina si va el "Precio Normal" o el "Precio especial"?** Es la más
+  importante: entre $42 y $37 hay un 12% de diferencia y el agente no tiene
+  cómo decidir. ¿Es por volumen? ¿Por tipo de cliente? ¿Es una promoción
+  vigente? Mientras tanto el agente cotiza siempre con el precio normal, el más
+  alto — es preferible arrancar arriba y que el asesor pueda mejorarlo, a
+  quedarse corto y tener que subir el número después.
+- **El descuento del 10% por efectivo o transferencia, ¿se calcula sobre el
+  subtotal sin IVA o sobre el total con IVA?** Da montos distintos.
+- **El adicional de $10 por m² fuera de Quito, ¿aplica también a la lámina de
+  seguridad arquitectónica?** Hoy el agente no cotiza seguridad fuera de Quito
+  porque no lo sabe.
+- **¿Qué valles entran en "Quito y valles cercanos"?** El agente tiene que
+  poder clasificar una ubicación sin adivinar: si alguien dice "Cumbayá",
+  "Tumbaco", "Los Chillos", "Sangolquí", ¿son mínimo 5 m² o 20?
+- **El documento menciona materiales de 15, 10 y 5 años, pero la lista de
+  precios solo trae 10 y 5.** ¿Sigue existiendo el de 15 años? ¿A qué precio?
+- **Seguridad arquitectónica, ¿solo viene en 10 años de garantía?**
+- **Roof Shield®** (control solar exterior para pérgolas): ¿mismo precio que la
+  instalación interna o distinto?
+- **El mínimo de 20 m² fuera de Quito, ¿aplica también a un trabajo vehicular?**
 
-Ya sabemos que son 5 m². Falta:
+## 2. Vehicular · resuelto, con una duda
 
-- **¿Es por producto o por pedido?** Si alguien quiere 3 m² de una lámina y
-  4 m² de otra, ¿son 7 y se puede, o no llega ninguno de los dos?
-- **¿Aplica a la línea vehicular?** Ahí el m² no es la unidad natural.
-- **¿Cómo se cotiza un trabajo vehicular?** ¿Por vehículo? ¿Cambia según el
-  tipo de auto?
+Confirmado: el agente no cotiza vehicular, solo releva el **modelo de vehículo**
+—que define si es sedán, SUV, camioneta simple o doble cabina, furgoneta— y el
+**nivel de seguridad** que busca. Después llama un asesor.
+
+- **¿Hay algún rango o "desde" que el agente pueda mencionar**, para no dejar
+  la conversación sin ninguna referencia de precio?
 
 ## 3. Qué pasa cuando el agente termina · BLOQUEA
 

@@ -1,61 +1,123 @@
-# Productos de MasterShield(R) y matriz de precios.
+# Productos de MasterShield(R), precios y reglas de venta.
 #
-# Los nombres salen del sitio del cliente, tal cual los usa el. No cambiarlos
-# por sinonimos: el agente los tiene que nombrar igual que la empresa.
+# Datos entregados por el cliente. Lo que esta en null falta confirmar, y
+# `calcular_precio` se niega a cotizar cuando falta algo que afecte el numero:
+# un precio equivocado dicho a un cliente real es peor que no dar precio.
 #
-# Lo que esta en null son datos que faltan del cliente. La herramienta
-# calcular_precio se NIEGA a cotizar mientras falte cualquiera de ellos, y el
-# agente deriva a un asesor. Es a proposito: un precio equivocado dicho a un
-# cliente real es peor que no dar precio.
+# Los nombres de producto salen del sitio del cliente. No usar sinonimos: el
+# agente los tiene que nombrar igual que la empresa, y nunca "polarizado".
 
-moneda: USD                 # A CONFIRMAR: Ecuador esta dolarizado
-iva_incluido: null          # A CONFIRMAR: en Ecuador es 15%. BLOQUEA cotizar.
-incluye_instalacion: null   # A CONFIRMAR: material solo, o material + mano de obra
+moneda: USD
+iva_porcentaje: 15
 
-# Minimo de venta. Confirmado por el cliente.
-# Lo aplica el codigo y no el prompt, para que el modelo no "haga una
-# excepcion" porque el cliente insistio. Cuando no se llega, el agente propone
-# sumar otro sector en vez de cortar la conversacion.
-minimo_m2: 5
-minimo_por: null            # A CONFIRMAR: "producto" o "pedido"
-minimo_aplica_vehicular: null  # A CONFIRMAR: ahi se cotiza por vehiculo, no por m2
+# TODOS los precios de este archivo son SIN IVA. El cliente pidio explicitamente
+# que el agente los exprese con la frase "mas IVA", no que los sume por su
+# cuenta: asi el numero que dice el agente es el mismo que figura en la lista.
+precios_sin_iva: true
 
-# El precio por m2 varia segun la region del pais. Estas son las claves que
-# despues usa `precio_m2` en cada producto.
-# A CONFIRMAR: cuales son las regiones. Define ademas con que granularidad el
-# agente tiene que relevar `zona`, que es el eje de calificacion mas fuerte.
-regiones: []
+# Descuento adicional por forma de pago, en porcentaje.
+descuento_efectivo_transferencia: 10
+# A CONFIRMAR: se aplica sobre el subtotal sin IVA o sobre el total con IVA?
+descuento_se_aplica_sobre: null
+
+# Que incluye el precio. Es un argumento de venta fuerte y conviene que el
+# agente lo tenga a mano: no es solo el material.
+incluye:
+  - material
+  - mano de obra de instalacion
+  - traslado del personal al sitio
+  - alquiler de escaleras o andamios
+  - limpieza profunda interna previa de los vidrios a intervenir
+
+# Zonas. No son regiones geograficas: son las dos categorias con las que el
+# cliente cotiza, mas el descarte. `zona` se releva con esta granularidad.
+zonas:
+  quito_y_valles:
+    nombre: "Quito y valles cercanos"
+    atiende: true
+    minimo_m2: 5
+    recargo_m2: 0
+    # A CONFIRMAR: que valles entran. Cumbaya, Tumbaco, Los Chillos, otros?
+    # El agente tiene que poder clasificar una ubicacion sin adivinar.
+    localidades: []
+
+  otra_ciudad:
+    nombre: "Otras ciudades del pais"
+    atiende: true
+    # El minimo es cuatro veces mas alto que en Quito: es el filtro de
+    # calificacion mas duro que tiene el negocio.
+    minimo_m2: 20
+    recargo_m2: 10   # + USD 10 + IVA por m2, sobre el precio de lista
+    # A CONFIRMAR: el recargo aplica tambien a seguridad arquitectonica?
+    recargo_aplica_a_todos: null
+
+  fuera_del_pais:
+    nombre: "Fuera de Ecuador"
+    atiende: false   # descarte
+
+# Que decide si va el precio normal o el especial. BLOQUEA cotizar bien.
+# Mientras sea null, `calcular_precio` usa el precio normal, que es el mas alto:
+# quedarse corto y que despues el asesor suba el numero es peor que arrancar
+# arriba y que el asesor pueda mejorarlo.
+criterio_precio_especial: null
 
 productos:
   - id: control_solar_arquitectonico
     nombre: "Lámina de Control Solar Arquitectónico"
     linea: arquitectonico
     objetivo: control_solar
-    precio_m2: {}   # una entrada por region
-    # Roof Shield(R) es este mismo producto instalado por el lado exterior,
-    # para pergolas donde el diseño no permite la instalacion interna. No es un
+    cotizable: exacto
+    opciones:
+      - garantia_anios: 10
+        precio_normal: 42
+        precio_especial: 37
+      - garantia_anios: 5
+        precio_normal: 32
+        precio_especial: 25
+    # Roof Shield(R) es este mismo producto instalado por el lado exterior, para
+    # pergolas donde el diseño no permite la instalacion interna. No es un
     # quinto producto: el cliente confirmo que son 4. Vida util 1 a 3 años
-    # contra 15/10/5 de la interna, asi que el agente siempre recomienda
+    # contra los 10 o 5 de la interna, asi que el agente recomienda siempre
     # primero la interna.
     variante_exterior:
       nombre: "Roof Shield®"
-      vida_util_años: [1, 3]
-      precio_m2: null   # A CONFIRMAR: ¿mismo precio que la instalacion interna?
+      vida_util_anios: [1, 3]
+      precio_m2: null   # A CONFIRMAR: mismo precio que la instalacion interna?
 
   - id: privacidad_arquitectonica
     nombre: "Lámina de Privacidad Arquitectónica"
     linea: arquitectonico
     objetivo: privacidad
-    precio_m2: {}
+    cotizable: exacto
+    opciones:
+      - garantia_anios: 10
+        precio_normal: 42
+        precio_especial: 37
+      - garantia_anios: 5
+        precio_normal: 32
+        precio_especial: 25
 
   - id: seguridad_arquitectonica
     nombre: "Lámina de Seguridad Arquitectónica"
     linea: arquitectonico
     objetivo: seguridad
-    precio_m2: {}
+    # "desde" y no "exacto": hay distintos niveles de seguridad y el grosor
+    # adecuado lo sugiere un asesor segun la necesidad. El agente da un piso,
+    # nunca un total cerrado.
+    cotizable: desde
+    opciones:
+      - garantia_anios: 10
+        precio_desde: 24
 
   - id: seguridad_vehicular
     nombre: "Lámina de Seguridad Vehicular"
     linea: vehicular
     objetivo: seguridad
-    precio_m2: {}
+    # El cliente fue explicito: aca el agente NO da precios. Solo releva para
+    # que un asesor se comunique. El m2 no es la unidad: el modelo de vehiculo
+    # define el tipo (sedan, SUV, camioneta simple o doble cabina, furgoneta) y
+    # con eso la cantidad de material y el tipo de trabajo.
+    cotizable: ninguno   # "no" a secas lo parsea YAML como booleano False
+    datos_requeridos:
+      - modelo_vehiculo
+      - nivel_seguridad
