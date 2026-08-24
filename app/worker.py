@@ -18,6 +18,9 @@ from datetime import datetime
 import asyncpg
 
 from app import db
+from app.agente import loop
+from app.canales import telegram
+from app.config import obtener_settings
 
 logger = logging.getLogger(__name__)
 
@@ -94,10 +97,20 @@ class Turno:
     conversacion_id: int
     ids_mensajes: list[int]
     texto: str
+    canal: str = ""
+    identificador: str = ""
 
     @property
     def ultimo_id(self) -> int:
         return self.ids_mensajes[-1]
+
+
+_DATOS_CONVERSACION = "SELECT canal, identificador FROM conversaciones WHERE id = $1"
+
+_GUARDAR_RESPUESTA = """
+    INSERT INTO mensajes (conversacion_id, rol, contenido, id_externo)
+    VALUES ($1, 'agente', $2, $3)
+"""
 
 
 def armar_turno(conversacion_id: int, filas: list[asyncpg.Record]) -> Turno | None:
@@ -128,13 +141,55 @@ def armar_turno(conversacion_id: int, filas: list[asyncpg.Record]) -> Turno | No
 
 
 async def procesar_turno(turno: Turno) -> None:
-    """Punto donde se engancha el agente en la sesion 4."""
+    """Corre el agente y manda la respuesta.
+
+    Sin delays ni partido de mensajes: eso es de la sesion 6. El cliente pidio
+    ademas un retraso de 60 a 120 segundos antes de responder, que tambien va
+    ahi junto con la supersesion.
+    """
     logger.info(
         "turno armado | conversacion=%s mensajes=%s | %s",
         turno.conversacion_id,
         len(turno.ids_mensajes),
         turno.texto.replace("\n", " / "),
     )
+
+    respuesta = await loop.responder(turno.conversacion_id)
+
+    logger.info(
+        "respuesta | conversacion=%s iteraciones=%s herramientas=%s "
+        "tokens_in=%s tokens_out=%s cache=%s | %s",
+        turno.conversacion_id,
+        respuesta.iteraciones,
+        respuesta.herramientas_usadas or "-",
+        respuesta.tokens_entrada,
+        respuesta.tokens_salida,
+        respuesta.tokens_cache_leidos,
+        respuesta.texto.replace("\n", " / "),
+    )
+
+    if not respuesta.texto:
+        # Puede pasar si el modelo solo llamo herramientas y se agotaron las
+        # iteraciones. No se manda nada, pero queda el log para investigarlo.
+        logger.warning("el agente no produjo texto | conversacion=%s", turno.conversacion_id)
+        return
+
+    id_externo = await _enviar(turno, respuesta.texto)
+    await db.ejecutar(_GUARDAR_RESPUESTA, turno.conversacion_id, respuesta.texto, id_externo)
+
+
+async def _enviar(turno: Turno, texto: str) -> str | None:
+    """Manda la respuesta por el canal de la conversacion."""
+    settings = obtener_settings()
+    if turno.canal == "telegram":
+        if not settings.telegram_bot_token:
+            logger.error("sin TELEGRAM_BOT_TOKEN: no se puede responder")
+            return None
+        return await telegram.enviar(
+            settings.telegram_bot_token, turno.identificador, texto
+        )
+    logger.error("canal sin implementar: %s", turno.canal)
+    return None
 
 
 class Worker:
@@ -194,6 +249,11 @@ class Worker:
         try:
             filas = await db.consultar(_MENSAJES_DEL_TURNO, conversacion_id)
             turno = armar_turno(conversacion_id, filas)
+
+            if turno is not None:
+                conversacion = await db.consultar_una(_DATOS_CONVERSACION, conversacion_id)
+                turno.canal = conversacion["canal"]
+                turno.identificador = conversacion["identificador"]
 
             if turno is None:
                 # No hay nada que contestar: la fila quedo huerfana.

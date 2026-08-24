@@ -1,0 +1,87 @@
+# Campos que releva el agente.
+#
+# PROVISORIO en cuanto a los pesos: los criterios comerciales salen del kick
+# off con el cliente y hasta entonces no hay scoring. Lo que si esta confirmado
+# son los campos y sus valores, que se derivan de la lista de precios y de las
+# reglas de venta reales.
+#
+# `guardar_dato` valida contra esta lista. Un campo que no este aca se rechaza,
+# para que `conversaciones.datos` no se convierta en un cajon de sastre donde
+# cada conversacion guarda claves distintas.
+
+campos:
+  linea:
+    descripcion: "Arquitectonico (vidrio de inmuebles) o vehicular (autos)"
+    valores: [arquitectonico, vehicular]
+    requerido: true
+
+  zona:
+    descripcion: "Donde se hace el trabajo. Define el minimo de venta y el precio"
+    valores: [quito_y_valles, otra_ciudad, fuera_del_pais]
+    requerido: true
+
+  objetivo:
+    descripcion: "Que necesita resolver. Mapea uno a uno con el producto"
+    valores: [control_solar, privacidad, seguridad]
+    requerido: true
+
+  aplicacion:
+    descripcion: "Donde se instala"
+    valores: [domicilio, oficina, pergola, local, vehiculo]
+    requerido: false
+
+  metros_cuadrados:
+    descripcion: "Metros cuadrados aproximados. Habilita la cotizacion"
+    tipo: numero
+    requerido: false   # obligatorio solo en la linea arquitectonica
+
+  medidas_detalle:
+    descripcion: "Como lo describio el cliente: cantidad de ventanas, medidas, si mando fotos"
+    tipo: texto
+    requerido: false
+
+  garantia_anios:
+    descripcion: "Garantia del material elegida. Cambia el precio"
+    valores: [10, 5]
+    requerido: false   # solo control solar y privacidad
+
+  modelo_vehiculo:
+    descripcion: "Modelo del auto. Define el tipo de vehiculo y la cantidad de material"
+    tipo: texto
+    requerido: false   # obligatorio en la linea vehicular
+
+  nivel_seguridad:
+    descripcion: "Nivel de seguridad que busca para el vehiculo"
+    tipo: texto
+    requerido: false   # obligatorio en la linea vehicular
+
+  telefono:
+    descripcion: "Telefono de contacto en formato internacional"
+    tipo: texto
+    requerido: true
+
+  disponibilidad:
+    descripcion: "Que dia o franja le queda comoda para la visita tecnica"
+    tipo: texto
+    requerido: false
+
+  tipo_cliente:
+    descripcion: "Particular, empresa, o constructora/arquitecto"
+    valores: [particular, empresa, constructora_o_arquitecto]
+    requerido: false
+
+  urgencia:
+    descripcion: "Cuando lo necesita"
+    valores: [inmediato, semanas, explorando]
+    requerido: false
+
+# Campos sin los cuales la calificacion no sirve, segun la linea. El handoff es
+# telefonico: sin telefono no hay a quien llamar, por mas completo que este el
+# resto.
+requeridos_por_linea:
+  arquitectonico: [linea, zona, objetivo, metros_cuadrados, telefono]
+  vehicular: [linea, zona, modelo_vehiculo, telefono]
+
+# Pesos y umbrales: PENDIENTE DEL KICK OFF. No inventar.
+pesos: null
+umbrales: null

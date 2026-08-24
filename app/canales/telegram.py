@@ -93,3 +93,37 @@ def parsear(update: dict[str, Any]) -> MensajeEntrante | None:
         telefono=(mensaje.get("contact") or {}).get("phone_number"),
         payload=update,
     )
+
+
+async def enviar(token: str, chat_id: str, texto: str) -> str | None:
+    """Manda un mensaje. Devuelve el id_externo del mensaje enviado.
+
+    Sin delays ni partido de mensajes: eso es de la sesion 6. Aca se manda tal
+    cual para poder probar el agente de punta a punta.
+    """
+    import httpx
+
+    async with httpx.AsyncClient(timeout=20) as cliente:
+        respuesta = await cliente.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": texto},
+        )
+        respuesta.raise_for_status()
+        cuerpo = respuesta.json()
+
+    if not cuerpo.get("ok"):
+        raise RuntimeError(f"sendMessage fallo: {cuerpo.get('description')}")
+
+    enviado = cuerpo["result"]
+    return f"{CANAL}:{enviado['chat']['id']}:{enviado['message_id']}"
+
+
+async def indicar_escribiendo(token: str, chat_id: str) -> None:
+    """El indicador dura ~5 segundos o hasta que llegue un mensaje."""
+    import httpx
+
+    async with httpx.AsyncClient(timeout=10) as cliente:
+        await cliente.post(
+            f"https://api.telegram.org/bot{token}/sendChatAction",
+            json={"chat_id": chat_id, "action": "typing"},
+        )

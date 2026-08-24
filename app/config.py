@@ -71,6 +71,11 @@ class Settings(BaseSettings):
     pais: str = "EC"
     prefijo_telefonico: str = "+593"
 
+    # Sonnet para el agente: la latencia importa en un chat y el razonamiento
+    # aca es acotado. Se cambia por entorno para comparar contra Opus.
+    modelo_agente: str = "claude-sonnet-5"
+    max_iteraciones_herramientas: int = Field(default=6, gt=0, le=20)
+
     log_level: str = "INFO"
 
     @field_validator("database_url")

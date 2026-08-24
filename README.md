@@ -62,6 +62,16 @@ No se pueden usar los dos a la vez: con un webhook registrado, Telegram rechaza
 igual con la base caída, a propósito: así el healthcheck distingue "el deploy
 no arrancó" de "la base no responde".
 
+## Conversar con el agente
+
+```bash
+.venv/bin/python scripts/simular_conversacion.py --reiniciar
+```
+
+Usa la base real y las mismas tablas que una conversación de verdad. Después de
+cada respuesta muestra qué herramientas se llamaron y cómo quedaron los datos
+relevados, que es lo que hace falta para ver si está entendiendo.
+
 ## Tests
 
 ```bash
@@ -97,7 +107,9 @@ Ver [PENDIENTES.md](PENDIENTES.md) para lo que falta y qué bloquea cada cosa.
 | `app/canales/` (Telegram) | listo, con tests |
 | `app/canales/` (WhatsApp Cloud API) | falta: sin credenciales de Meta |
 | `app/kommo/` | sesión 3 |
-| `app/agente/` | sesión 4 |
+| `app/agente/` | listo, probado contra el modelo real |
+| `app/precios.py` + `config/productos.yaml` | listo, con la lista real del cliente |
+| `prompts/` | provisorio: falta la revisión de MasterShield |
 | `app/scoring.py` | sesión 5, requiere kick off |
 | `app/whatsapp/` | sesión 6, requiere kick off |
 | deploy y `/metricas` | sesión 7 |

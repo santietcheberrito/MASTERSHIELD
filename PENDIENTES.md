@@ -91,6 +91,16 @@ El cliente confirmó que son los 4 del sitio. Queda:
   `postgres.<ref>`); el host directo solo tiene IPv6 y no resuelve desde acá.
   Migración `001_inicial.sql` aplicada, pgvector 0.8.2.
 
+## Para cerrar la sesión 4
+
+- [ ] **Que MasterShield revise `prompts/conocimiento.md`.** Sigue siendo lo
+  único que bloquea usar esto con clientes reales.
+- [ ] **Qué determina el precio Normal contra el especial.** Mientras tanto el
+  agente cotiza con el normal, el más alto.
+- [ ] **Acortar los mensajes.** El agente todavía manda respuestas de 3 o 4
+  líneas cuando el máximo son 2. Se resuelve en la sesión 6 partiéndolas en
+  varios mensajes con pausas, que es como escribe una persona.
+
 ## Calibración pendiente
 
 - [x] **Metros cuadrados mínimos.** Son 5 m². Lo dijo el cliente.
