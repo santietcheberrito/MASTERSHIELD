@@ -30,15 +30,21 @@ de carro" sobre vidrio arquitectónico, pero sí venden lámina vehicular
 como producto propio. El agente no debe confundir las dos cosas ni
 rechazar consultas vehiculares: son negocio.
 
-### El evento de conversión es la visita técnica
+### El agente releva; el vendedor cierra
 
-No es la llamada: es agendar la visita técnica. Es gratuita en Quito y
-alrededores, y su única condición declarada es que el cliente entregue
-información detallada del pedido. También se puede cotizar de forma
-rápida con fotos o una referencia de metros cuadrados.
+Para el negocio, el evento de conversión es la visita técnica. **Para el agente
+no**: el agente no agenda nada. Su entregable es una calificación completa en
+Kommo, con toda la información del pedido y qué día le queda cómodo al cliente.
+Con eso llama un vendedor y cierra la visita.
 
-Todo el relevamiento del agente apunta a eso: conseguir la información
-que habilita la visita o la cotización rápida.
+Esto define el final de cada conversación y hay que tenerlo presente en el
+prompt: el agente no promete una fecha, no confirma un horario y no dice que
+alguien va a ir tal día. Dice que un asesor MS se comunica para coordinar.
+
+La visita es gratuita en Quito y sus valles, y su única condición declarada es
+que el cliente entregue información detallada del pedido. También se puede
+cotizar de forma rápida con fotos o una referencia de metros cuadrados: eso
+sí lo hace el agente, con `calcular_precio`.
 
 ---
 
@@ -168,19 +174,28 @@ marcada como provisoria.
 | Campo | Valores | Por qué importa |
 |---|---|---|
 | `linea` | arquitectónico · vehicular | Rutea todo lo demás |
-| `zona` | Quito y alrededores · otra ciudad · fuera del país | Eje más fuerte |
+| `zona` | Quito y valles · otra ciudad del país · fuera de Ecuador | Eje más fuerte |
 | `aplicacion` | domicilio · oficina · pérgola · local · vehículo | Define producto |
-| `objetivo` | control solar · privacidad · seguridad · decorativo | Líneas distintas |
+| `objetivo` | control solar · privacidad · seguridad | Es el producto |
 | `medidas` | m² aprox., cantidad de ventanas o fotos | Habilita cotización |
+| `garantia` | 10 años · 5 años | Cambia el precio, solo solar y privacidad |
+| `modelo_vehiculo` | texto | Solo vehicular: define el tipo y el material |
+| `nivel_seguridad` | texto | Solo vehicular |
+| `disponibilidad` | qué día o franja le queda cómoda | Lo que el vendedor necesita para llamar |
+| `telefono` | E.164 | En Telegram no viene en el payload: hay que pedirlo |
 | `tipo_cliente` | particular · empresa · constructora o arquitecto | A confirmar |
 | `urgencia` | inmediato · semanas · explorando | A confirmar |
 
-**Descarte:** fuera de Ecuador. **Fricción alta:** ciudades fuera de
-Quito, donde existen montos mínimos de instalación — el monto exacto es
-un dato que falta y hay que pedirlo.
+`objetivo` mapea uno a uno con los productos, así que relevarlo es elegir qué
+se vende: control solar, privacidad o seguridad.
 
-`medidas` es el campo crítico: sin fotos ni referencia de metros no hay
-cotización rápida ni visita agendable.
+**Descarte:** fuera de Ecuador. **Filtro duro:** el mínimo de instalación es de
+5 m² en Quito y sus valles, pero **20 m² en el resto del país**. Alguien en otra
+ciudad con 15 m² no es cliente, y eso pesa más que cualquier otro campo.
+
+`medidas` sigue siendo crítico: sin fotos ni referencia de metros no hay
+cotización ni visita. `telefono` es igual de crítico en Telegram, porque el
+handoff es telefónico y sin número no hay a quién llamar.
 
 ---
 

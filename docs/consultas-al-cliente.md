@@ -25,12 +25,10 @@ Falta esto:
   quedarse corto y tener que subir el número después.
 - **El descuento del 10% por efectivo o transferencia, ¿se calcula sobre el
   subtotal sin IVA o sobre el total con IVA?** Da montos distintos.
-- **El adicional de $10 por m² fuera de Quito, ¿aplica también a la lámina de
-  seguridad arquitectónica?** Hoy el agente no cotiza seguridad fuera de Quito
-  porque no lo sabe.
-- **¿Qué valles entran en "Quito y valles cercanos"?** El agente tiene que
-  poder clasificar una ubicación sin adivinar: si alguien dice "Cumbayá",
-  "Tumbaco", "Los Chillos", "Sangolquí", ¿son mínimo 5 m² o 20?
+- **Confirmar el criterio de zona.** Se está tomando: todo lo que esté en Quito
+  y sus valles paga precio estándar con mínimo de 5 m²; todo el resto del país
+  paga el adicional de $10 por m² con mínimo de 20, seguridad incluida. Si
+  alguna ciudad o valle es excepción, avisar.
 - **El documento menciona materiales de 15, 10 y 5 años, pero la lista de
   precios solo trae 10 y 5.** ¿Sigue existiendo el de 15 años? ¿A qué precio?
 - **Seguridad arquitectónica, ¿solo viene en 10 años de garantía?**
@@ -47,18 +45,17 @@ Confirmado: el agente no cotiza vehicular, solo releva el **modelo de vehículo*
 - **¿Hay algún rango o "desde" que el agente pueda mencionar**, para no dejar
   la conversación sin ninguna referencia de precio?
 
-## 3. Qué pasa cuando el agente termina · BLOQUEA
+## 3. Qué pasa cuando el agente termina · resuelto
 
-Esta es la que más cambia el diseño y todavía no está definida.
+El agente **no agenda la visita**. Releva toda la información, pregunta qué día
+le queda cómodo al cliente, y sube todo a Kommo para que llame un vendedor y
+cierre la visita. No hace falta calendario ni disponibilidad en tiempo real.
 
-- **¿El agente agenda la visita técnica, o solo releva y después llama un
-  asesor?** El material dice que el evento importante es agendar la visita,
-  pero también que el handoff es telefónico. Si el agente agenda, necesito
-  saber días, horarios disponibles y si hay un calendario que consultar.
-- **¿Qué información necesita SÍ o SÍ un asesor para agendar la visita?** El
+Falta:
+
+- **¿Qué información necesita SÍ o SÍ un asesor para llamar con sentido?** El
   documento dice "información detallada del pedido y referencias", que es
-  demasiado vago para programarlo. Concretamente: ¿qué tiene que saber el
-  asesor antes de aceptar ir?
+  demasiado vago para programarlo.
 - **¿A quién y por qué medio se avisa cuando el agente deriva a un humano?**
 - **Si un vendedor entra a contestar manualmente, el agente se calla.** ¿Cómo
   se dan cuenta ustedes de que eso pasó?

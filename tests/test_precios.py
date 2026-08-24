@@ -38,6 +38,15 @@ def test_precio_de_lista_en_quito(producto, garantia, precio):
     assert c.subtotal == precio * 20
 
 
+def test_los_valles_cuentan_como_quito():
+    """Cumbayá, Tumbaco, Los Chillos: precio estándar y mínimo de 5 m². Es una
+    sola zona, no hay categoría intermedia."""
+    c = cotizar(CONTROL_SOLAR, 6, QUITO, 10)
+    assert c.puede_cotizar
+    assert c.recargo_m2 == 0
+    assert c.minimo_m2 is None
+
+
 def test_otras_ciudades_pagan_diez_dolares_mas_por_metro():
     quito = cotizar(CONTROL_SOLAR, 25, QUITO, 10)
     otra = cotizar(CONTROL_SOLAR, 25, OTRA, 10)
@@ -112,12 +121,13 @@ def test_seguridad_arquitectonica_da_un_desde():
     assert c.precio_m2 == 24
 
 
-def test_seguridad_en_otra_ciudad_no_se_cotiza_todavia():
-    """No está confirmado si el recargo de USD 10 aplica también a seguridad.
-    Mientras no se sepa, no se inventa el número."""
+def test_seguridad_fuera_de_quito_tambien_paga_el_adicional():
+    """El adicional de USD 10 por m² aplica a todos los productos cotizables."""
     c = cotizar(SEGURIDAD, 30, OTRA, 10)
-    assert not c.puede_cotizar
-    assert "recargo" in c.motivo
+    assert c.puede_cotizar
+    assert c.tipo == "desde"
+    assert c.precio_m2 == 34
+    assert c.subtotal == 34 * 30
 
 
 # --- vehicular: no se cotiza por chat ---------------------------------------

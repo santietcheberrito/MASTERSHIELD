@@ -37,9 +37,9 @@ zonas:
     atiende: true
     minimo_m2: 5
     recargo_m2: 0
-    # A CONFIRMAR: que valles entran. Cumbaya, Tumbaco, Los Chillos, otros?
-    # El agente tiene que poder clasificar una ubicacion sin adivinar.
-    localidades: []
+    # Regla, decidida para simplificar: todo lo que este en Quito y sus valles
+    # cuenta como Quito. No hace falta una lista cerrada de localidades; si el
+    # cliente nombra un valle, es zona estandar.
 
   otra_ciudad:
     nombre: "Otras ciudades del pais"
@@ -48,8 +48,10 @@ zonas:
     # calificacion mas duro que tiene el negocio.
     minimo_m2: 20
     recargo_m2: 10   # + USD 10 + IVA por m2, sobre el precio de lista
-    # A CONFIRMAR: el recargo aplica tambien a seguridad arquitectonica?
-    recargo_aplica_a_todos: null
+    # Aplica a todos los productos cotizables, seguridad incluida. No sale de
+    # la lista original del cliente sino de una decision posterior: si alguna
+    # vez se confirma que seguridad tiene otro adicional, se cambia aca.
+    recargo_aplica_a_todos: true
 
   fuera_del_pais:
     nombre: "Fuera de Ecuador"
