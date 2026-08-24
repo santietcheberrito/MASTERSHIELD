@@ -17,7 +17,9 @@ from typing import Any
 import yaml
 
 from app import db
+from app.config import obtener_settings
 from app.precios import cotizar, garantias_disponibles
+from app.telefono import normalizar
 
 logger = logging.getLogger(__name__)
 
@@ -62,14 +64,32 @@ async def guardar_dato(conversacion_id: int, campo: str, valor: Any) -> dict[str
         if valor <= 0:
             return {"error": f"{campo!r} tiene que ser mayor que cero"}
 
+    # El telefono ademas sube a su propia columna, normalizado. Kommo busca el
+    # contacto por telefono y esa columna es la que tiene indice: si queda solo
+    # dentro del jsonb, la sincronizacion no lo encuentra y crea un contacto
+    # nuevo por cada conversacion. El crudo se guarda igual en `datos`, para que
+    # se pueda revisar si la normalizacion no pudo con el.
+    normalizado = None
+    if campo == "telefono":
+        normalizado = normalizar(str(valor), obtener_settings().prefijo_telefonico)
+        if normalizado is None:
+            logger.warning(
+                "telefono que no se pudo normalizar | conversacion=%s %r",
+                conversacion_id,
+                valor,
+            )
+
     datos = await db.valor(
         """
-        UPDATE conversaciones SET datos = datos || $2::jsonb
+        UPDATE conversaciones SET
+            datos    = datos || $2::jsonb,
+            telefono = COALESCE($3, telefono)
         WHERE id = $1
         RETURNING datos
         """,
         conversacion_id,
         {campo: valor},
+        normalizado,
     )
     if datos is None:
         # El UPDATE no toco ninguna fila. Sin este chequeo la herramienta

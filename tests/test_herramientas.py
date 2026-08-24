@@ -9,7 +9,7 @@ import pytest
 
 from app.agente import herramientas
 
-pytestmark = pytest.mark.db
+pytestmark = [pytest.mark.db, pytest.mark.usefixtures("settings_de_prueba")]
 
 
 async def _conversacion(conexion, datos=None) -> int:
@@ -230,3 +230,49 @@ def test_las_definiciones_salen_del_yaml():
     assert "metros_cuadrados" in enum
     assert "telefono" in enum
     assert "modelo_vehiculo" in guardar["description"]
+
+
+# --- el telefono sube a su columna ------------------------------------------
+
+async def test_el_telefono_se_guarda_normalizado_en_su_columna(pool_en_transaccion):
+    """Kommo busca el contacto por telefono y esa columna es la que tiene
+    índice. Si queda solo en el jsonb, la sincronización crea un contacto nuevo
+    por cada conversación."""
+    conexion = pool_en_transaccion
+    id_conv = await _conversacion(conexion)
+
+    r = await herramientas.guardar_dato(id_conv, "telefono", "0999123456")
+
+    assert r["guardado"] is True
+    assert await conexion.fetchval(
+        "SELECT telefono FROM conversaciones WHERE id = $1", id_conv
+    ) == "+593999123456"
+    # El crudo queda igual, por si hay que revisarlo.
+    assert r["datos_actuales"]["telefono"] == "0999123456"
+
+
+async def test_un_telefono_que_no_se_puede_normalizar_no_ensucia_la_columna(
+    pool_en_transaccion,
+):
+    """Antes que inventarle un código de país, se deja la columna vacía y el
+    crudo en `datos` para que alguien lo mire."""
+    conexion = pool_en_transaccion
+    id_conv = await _conversacion(conexion)
+
+    r = await herramientas.guardar_dato(id_conv, "telefono", "1160074604")
+
+    assert r["datos_actuales"]["telefono"] == "1160074604"
+    assert await conexion.fetchval(
+        "SELECT telefono FROM conversaciones WHERE id = $1", id_conv
+    ) is None
+
+
+async def test_otros_campos_no_tocan_la_columna_telefono(pool_en_transaccion):
+    conexion = pool_en_transaccion
+    id_conv = await _conversacion(conexion)
+    await herramientas.guardar_dato(id_conv, "telefono", "0999123456")
+    await herramientas.guardar_dato(id_conv, "zona", "quito_y_valles")
+
+    assert await conexion.fetchval(
+        "SELECT telefono FROM conversaciones WHERE id = $1", id_conv
+    ) == "+593999123456"

@@ -5,12 +5,11 @@ from types import SimpleNamespace
 import pytest
 
 from app.agente import loop
-from app.config import obtener_settings
 
 
 # --- prompt del sistema -----------------------------------------------------
 
-def test_el_bloque_estatico_se_cachea_y_el_dinamico_no():
+def test_el_bloque_estatico_se_cachea_y_el_dinamico_no(settings_de_prueba):
     """El prefijo con instrucciones y conocimiento es idéntico en cada turno de
     cada conversación; el estado cambia siempre. TTL de una hora porque con
     decenas de conversaciones por día los huecos superan los 5 minutos."""
@@ -20,7 +19,7 @@ def test_el_bloque_estatico_se_cachea_y_el_dinamico_no():
     assert "cache_control" not in bloques[1]
 
 
-def test_el_conocimiento_va_en_el_prefijo():
+def test_el_conocimiento_va_en_el_prefijo(settings_de_prueba):
     """Sin esto el agente contesta desde lo que "sabe" de películas para vidrio,
     que para estos productos es falso."""
     estatico = loop.armar_sistema(None)[0]["text"]
@@ -28,27 +27,26 @@ def test_el_conocimiento_va_en_el_prefijo():
     assert "no reduce el ruido" in estatico.lower() or "ruido" in estatico
 
 
-def test_inyecta_lo_que_ya_sabe():
+def test_inyecta_lo_que_ya_sabe(settings_de_prueba):
     dinamico = loop.armar_sistema({"zona": "quito_y_valles", "metros_cuadrados": 20})[1]["text"]
     assert "zona: quito_y_valles" in dinamico
     assert "metros_cuadrados: 20" in dinamico
     assert "No vuelva a preguntar" in dinamico
 
 
-def test_sin_datos_lo_dice():
+def test_sin_datos_lo_dice(settings_de_prueba):
     assert "Todavia nada" in loop.armar_sistema(None)[1]["text"]
 
 
+def test_inyecta_la_hora_de_ecuador(settings_de_prueba):
+    """Sin esto el agente no puede saludar bien —no sabe si es la mañana o la
+    tarde— ni sabe que está contestando fuera de horario."""
+    dinamico = loop.armar_sistema(None)[1]["text"]
+    assert "en Ecuador" in dinamico
+    assert "horario de atencion" in dinamico
+
+
 # --- historial --------------------------------------------------------------
-
-@pytest.fixture
-def _settings_de_prueba(monkeypatch):
-    """`responder` lee la configuración, y el entorno de los tests está limpio."""
-    monkeypatch.setenv("DATABASE_URL", "postgresql://u:c@host:5432/base")
-    obtener_settings.cache_clear()
-    yield
-    obtener_settings.cache_clear()
-
 
 async def _conversacion(conexion) -> int:
     return await conexion.fetchval(
@@ -139,7 +137,7 @@ def _mensaje_api(bloques):
 
 @pytest.mark.db
 async def test_no_se_pierde_lo_que_dijo_junto_con_la_herramienta(
-    pool_en_transaccion, monkeypatch, _settings_de_prueba
+    pool_en_transaccion, monkeypatch, settings_de_prueba
 ):
     """El modelo contesta en el mismo turno en que llama herramientas: primero
     el texto, después los tool_use. Si nos quedáramos solo con el texto de la
@@ -173,7 +171,7 @@ async def test_no_se_pierde_lo_que_dijo_junto_con_la_herramienta(
 
 
 @pytest.mark.db
-async def test_sin_historial_no_llama_al_modelo(pool_en_transaccion, monkeypatch, _settings_de_prueba):
+async def test_sin_historial_no_llama_al_modelo(pool_en_transaccion, monkeypatch, settings_de_prueba):
     conexion = pool_en_transaccion
     id_conv = await _conversacion(conexion)
 

@@ -107,9 +107,13 @@ class Turno:
 
 _DATOS_CONVERSACION = "SELECT canal, identificador FROM conversaciones WHERE id = $1"
 
+# `procesado` en true desde el vamos: la marca significa "ya entro en un turno"
+# y solo tiene sentido para los mensajes del cliente. Si los del agente quedan
+# en false, el indice parcial `mensajes_sin_procesar_ix` acumula cada respuesta
+# que el bot dio en su vida y la consulta del worker se va poniendo mas cara.
 _GUARDAR_RESPUESTA = """
-    INSERT INTO mensajes (conversacion_id, rol, contenido, id_externo)
-    VALUES ($1, 'agente', $2, $3)
+    INSERT INTO mensajes (conversacion_id, rol, contenido, id_externo, procesado)
+    VALUES ($1, 'agente', $2, $3, true)
 """
 
 

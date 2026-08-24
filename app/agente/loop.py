@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -78,22 +79,36 @@ def armar_sistema(datos: dict | None) -> list[dict]:
 
     if datos:
         conocido = "\n".join(f"- {k}: {v}" for k, v in sorted(datos.items()))
-        bloques.append(
-            {
-                "type": "text",
-                "text": (
-                    "# Lo que ya sabe de esta conversacion\n\n"
-                    f"{conocido}\n\n"
-                    "No vuelva a preguntar nada de esto."
-                ),
-            }
-        )
+        estado = f"{conocido}\n\nNo vuelva a preguntar nada de esto."
     else:
-        bloques.append(
-            {"type": "text", "text": "# Lo que ya sabe de esta conversacion\n\nTodavia nada."}
-        )
+        estado = "Todavia nada. Es el arranque de la conversacion."
+
+    bloques.append(
+        {
+            "type": "text",
+            "text": (
+                f"# Ahora\n\n{_momento()}\n\n"
+                f"# Lo que ya sabe de esta conversacion\n\n{estado}"
+            ),
+        }
+    )
 
     return bloques
+
+
+def _momento() -> str:
+    """La hora de Ecuador, no la del servidor.
+
+    Sin esto el agente no puede saludar bien —no sabe si es la manana o la
+    tarde— ni sabe que esta contestando fuera de horario.
+    """
+    settings = obtener_settings()
+    ahora = datetime.now(settings.zona)
+    dias = ("lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo")
+    dentro = "dentro del horario de atencion" if settings.esta_en_horario(ahora) else (
+        "FUERA del horario de atencion"
+    )
+    return f"{dias[ahora.weekday()]} {ahora:%d/%m/%Y %H:%M} en Ecuador, {dentro}."
 
 
 async def armar_historial(conversacion_id: int) -> list[dict]:

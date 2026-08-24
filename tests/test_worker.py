@@ -100,7 +100,10 @@ async def test_tres_mensajes_seguidos_dan_un_solo_turno(pool_en_transaccion, tur
     assert len(turnos) == 1
     assert turnos[0].texto == "buenas\nnecesito lamina\npara una oficina en Cumbaya"
     assert await conexion.fetchval("SELECT count(*) FROM pendientes") == 0
-    assert await conexion.fetchval("SELECT count(*) FROM mensajes WHERE NOT procesado") == 0
+    assert await conexion.fetchval(
+        "SELECT count(*) FROM mensajes WHERE conversacion_id = $1 AND NOT procesado",
+        await _id_conversacion(conexion),
+    ) == 0
 
 
 @pytest.mark.db
@@ -240,7 +243,10 @@ async def test_un_turno_que_falla_no_pierde_la_conversacion(pool_en_transaccion,
     assert fila is not None
     assert fila["bloqueado_hasta"] is None, "tiene que quedar libre para reintentar"
     assert "el agente se cayo" in fila["ultimo_error"]
-    assert await conexion.fetchval("SELECT count(*) FROM mensajes WHERE NOT procesado") == 1
+    assert await conexion.fetchval(
+        "SELECT count(*) FROM mensajes WHERE conversacion_id = $1 AND NOT procesado",
+        await _id_conversacion(conexion),
+    ) == 1
 
 
 @pytest.mark.db

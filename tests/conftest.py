@@ -10,7 +10,7 @@ import asyncpg
 import pytest
 
 from app import db
-from app.config import CREDENCIALES_OPCIONALES, Settings
+from app.config import CREDENCIALES_OPCIONALES, Settings, obtener_settings
 
 RAIZ = Path(__file__).resolve().parent.parent
 
@@ -188,3 +188,17 @@ def pool_en_transaccion(conexion, monkeypatch):
     """
     monkeypatch.setattr(db, "pool", lambda: _PoolFalso(conexion))
     return conexion
+
+
+@pytest.fixture
+def settings_de_prueba(monkeypatch):
+    """Configuracion valida para el codigo que llama a `obtener_settings()`.
+
+    `entorno_limpio` deja el entorno sin DATABASE_URL para que los tests de
+    configuracion sean deterministas, pero cualquier modulo que lea settings
+    por dentro explota con eso. Los que lo necesitan piden esta fixture.
+    """
+    monkeypatch.setenv("DATABASE_URL", "postgresql://usuario:clave@host:5432/base")
+    obtener_settings.cache_clear()
+    yield
+    obtener_settings.cache_clear()
