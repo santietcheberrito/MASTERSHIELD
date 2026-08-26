@@ -82,6 +82,51 @@ requeridos_por_linea:
   arquitectonico: [linea, zona, objetivo, metros_cuadrados, telefono]
   vehicular: [linea, zona, modelo_vehiculo, telefono]
 
-# Pesos y umbrales: PENDIENTE DEL KICK OFF. No inventar.
-pesos: null
-umbrales: null
+# ---------------------------------------------------------------------------
+# Puntaje
+#
+# PROVISORIO. Los pesos son una hipotesis armada con las reglas de negocio que
+# el cliente si confirmo (minimos de venta por zona, que vehicular no se cotiza
+# por chat, que fuera de Ecuador se descarta). Los valores relativos —cuanto
+# vale la urgencia contra el tamaño del trabajo, por ejemplo— salen del kick
+# off, y hasta entonces son una conjetura.
+#
+# Recalibrar es editar este archivo. No se toca codigo ni se vuelve a desplegar.
+#
+# Los tramos de metros se evaluan de arriba hacia abajo: gana el primero cuyo
+# `desde` se cumpla.
+# ---------------------------------------------------------------------------
+pesos:
+  zona:
+    quito_y_valles: 20      # minimo de 5 m2, precio estandar
+    otra_ciudad: 8          # minimo de 20 m2 y recargo: mucha mas friccion
+    fuera_del_pais: 0
+
+  metros_cuadrados:
+    - {desde: 40, puntos: 25}
+    - {desde: 20, puntos: 16}
+    - {desde: 10, puntos: 10}
+    - {desde: 0, puntos: 4}
+
+  urgencia:
+    inmediato: 20
+    semanas: 12
+    explorando: 3
+
+  tipo_cliente:
+    constructora_o_arquitecto: 20   # el lead de mayor valor, a confirmar
+    empresa: 15
+    particular: 8
+
+  linea:
+    arquitectonico: 5       # el nucleo del negocio
+    vehicular: 3            # linea secundaria
+
+  # Que haya dicho cuando puede es señal de intencion, y ademas es lo que el
+  # vendedor necesita para llamar.
+  disponibilidad_presente: 5
+
+# Un caso ideal —constructora, trabajo grande, urgente, en Quito— llega a 95.
+umbrales:
+  alta: 70
+  media: 45

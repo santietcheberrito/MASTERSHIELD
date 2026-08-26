@@ -91,6 +91,24 @@ El cliente confirmó que son los 4 del sitio. Queda:
   `postgres.<ref>`); el host directo solo tiene IPv6 y no resuelve desde acá.
   Migración `001_inicial.sql` aplicada, pgvector 0.8.2.
 
+## CRM de prueba en Notion
+
+Mientras no haya acceso a Kommo, el pipeline se prueba en Notion:
+**MasterShield — CRM de prueba → Consultas**.
+
+El documento del lead (`app/crm/documento.py`) no sabe de Notion ni de Kommo:
+arma qué contacto, qué lead, qué nota y qué tarea corresponden a una
+conversación, y cada destino lo traduce a sus nombres de campo. Por eso pasar a
+Kommo es agregar un destino, no rehacer nada.
+
+- [ ] **Token de integración de Notion** para que el push sea automático. Se
+  crea en notion.so/my-integrations, se comparte la base con la integración, y
+  el valor va en `NOTION_TOKEN` en `.env`. Hoy las filas las cargo a mano.
+- [ ] **Que el equipo de MasterShield mire el tablero** y diga qué falta, qué
+  sobra y si las etapas son las correctas. Es la validación que importa antes
+  de tocar el CRM real.
+- [ ] **Los pesos del score son provisorios.** Ver la sección del kick off.
+
 ## Para cerrar la sesión 4
 
 - [ ] **Que MasterShield revise `prompts/conocimiento.md`.** Sigue siendo lo

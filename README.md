@@ -106,10 +106,11 @@ Ver [PENDIENTES.md](PENDIENTES.md) para lo que falta y qué bloquea cada cosa.
 | `app/webhook.py` + `app/worker.py` + `app/ingesta.py` | listo, probado con Telegram real |
 | `app/canales/` (Telegram) | listo, con tests |
 | `app/canales/` (WhatsApp Cloud API) | falta: sin credenciales de Meta |
-| `app/kommo/` | sesión 3 |
+| `app/kommo/` | pendiente: sin acceso a la cuenta |
 | `app/agente/` | listo, probado contra el modelo real |
 | `app/precios.py` + `config/productos.yaml` | listo, con la lista real del cliente |
 | `prompts/` | provisorio: falta la revisión de MasterShield |
-| `app/scoring.py` | sesión 5, requiere kick off |
+| `app/scoring.py` | listo, con pesos **provisorios** hasta el kick off |
+| `app/crm/documento.py` | listo: el lead que se carga en el CRM |
 | `app/whatsapp/` | sesión 6, requiere kick off |
 | deploy y `/metricas` | sesión 7 |
