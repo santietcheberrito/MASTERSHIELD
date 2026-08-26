@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.agente.herramientas import calificacion
+from app.calificacion import calificacion
 from app.precios import configuracion as configuracion_productos
 
 # Etapas del embudo. Las tres de calificado son las que un asesor tiene que

@@ -16,9 +16,8 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from app import db
-from app.agente.herramientas import PRODUCTO_POR_OBJETIVO
 from app.config import obtener_settings
-from app.precios import cotizar
+from app.precios import PRODUCTO_POR_OBJETIVO, cotizar
 from app.scoring import CONVERSANDO, DERIVADA, Puntaje, puntuar
 
 CANALES = {"telegram": "Telegram", "whatsapp": "WhatsApp", "consola": "Consola"}

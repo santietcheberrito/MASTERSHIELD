@@ -17,6 +17,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 CREDENCIALES_OPCIONALES = (
     "anthropic_api_key",
     "telegram_bot_token",
+    "notion_token",
     "kommo_subdomain",
     "kommo_access_token",
     "bsp_api_url",
@@ -57,6 +58,11 @@ class Settings(BaseSettings):
     # webhook: Telegram nos pega, hace falta URL publica. Es lo de produccion.
     # off: no se escucha Telegram.
     telegram_modo: str = "polling"
+
+    # CRM de prueba mientras no haya acceso a Kommo. La base de Notion tiene
+    # que estar compartida con la integracion o la API devuelve 404.
+    notion_token: str = ""
+    notion_data_source_id: str = ""
 
     # 30s y no 6: desde que el cliente pidio un retraso de 1-2 minutos antes de
     # responder, recolectar mensajes durante mas tiempo sale gratis. La ventana

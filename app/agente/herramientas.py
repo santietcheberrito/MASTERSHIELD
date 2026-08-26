@@ -10,26 +10,16 @@ insistio.
 from __future__ import annotations
 
 import logging
-from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
-import yaml
-
 from app import db
+from app.calificacion import calificacion
 from app.config import obtener_settings
-from app.precios import cotizar, garantias_disponibles
+from app.crm.sincronizacion import sincronizar
+from app.precios import PRODUCTO_POR_OBJETIVO, cotizar, garantias_disponibles
 from app.telefono import normalizar
 
 logger = logging.getLogger(__name__)
-
-RUTA_CALIFICACION = Path(__file__).resolve().parent.parent.parent / "config" / "calificacion.yaml"
-
-
-@lru_cache
-def calificacion() -> dict[str, Any]:
-    return yaml.safe_load(RUTA_CALIFICACION.read_text(encoding="utf-8"))
-
 
 # ---------------------------------------------------------------------------
 # guardar_dato
@@ -108,12 +98,6 @@ async def guardar_dato(conversacion_id: int, campo: str, valor: Any) -> dict[str
 # calcular_precio
 # ---------------------------------------------------------------------------
 
-PRODUCTO_POR_OBJETIVO = {
-    ("arquitectonico", "control_solar"): "control_solar_arquitectonico",
-    ("arquitectonico", "privacidad"): "privacidad_arquitectonica",
-    ("arquitectonico", "seguridad"): "seguridad_arquitectonica",
-    ("vehicular", "seguridad"): "seguridad_vehicular",
-}
 
 
 async def calcular_precio(
@@ -244,8 +228,11 @@ async def finalizar_calificacion(conversacion_id: int) -> dict[str, Any]:
     )
     logger.info("calificacion finalizada | conversacion=%s", conversacion_id)
 
-    # TODO sesion 5: scoring desde config/calificacion.yaml.
-    # TODO sesion 3: sincronizacion con Kommo.
+    # Si el CRM falla, la conversacion no se pierde: queda marcada para
+    # reintento y el agente cierra igual. El cliente no se tiene que enterar de
+    # que una integracion esta caida.
+    await sincronizar(conversacion_id)
+
     return {
         "finalizada": True,
         "datos": datos,
@@ -277,7 +264,11 @@ async def escalar_a_humano(
         {"motivo": motivo},
     )
     logger.info("escalado a humano | conversacion=%s motivo=%s", conversacion_id, motivo)
-    # TODO: notificar al equipo. Falta definir a quien y por que medio.
+
+    # Tambien sube al CRM: una derivacion tiene que aparecer en el tablero, o el
+    # equipo no se entera de que alguien esta esperando.
+    await sincronizar(conversacion_id)
+    # TODO: ademas notificar al equipo. Falta definir a quien y por que medio.
     return {"escalado": True, "motivo": motivo, "estado": estado}
 
 

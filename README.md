@@ -106,6 +106,7 @@ Ver [PENDIENTES.md](PENDIENTES.md) para lo que falta y qué bloquea cada cosa.
 | `app/webhook.py` + `app/worker.py` + `app/ingesta.py` | listo, probado con Telegram real |
 | `app/canales/` (Telegram) | listo, con tests |
 | `app/canales/` (WhatsApp Cloud API) | falta: sin credenciales de Meta |
+| `app/crm/notion.py` | listo: CRM de prueba, automático |
 | `app/kommo/` | pendiente: sin acceso a la cuenta |
 | `app/agente/` | listo, probado contra el modelo real |
 | `app/precios.py` + `config/productos.yaml` | listo, con la lista real del cliente |

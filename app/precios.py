@@ -67,6 +67,17 @@ class Cotizacion:
             self.precio_m2 = round(self.precio_m2, 2)
 
 
+# Que producto corresponde a lo que el cliente necesita. Vive aca y no en las
+# herramientas del agente porque lo usan tambien el documento del CRM y el
+# scoring, y tenerlo alla creaba un import circular.
+PRODUCTO_POR_OBJETIVO = {
+    ("arquitectonico", "control_solar"): "control_solar_arquitectonico",
+    ("arquitectonico", "privacidad"): "privacidad_arquitectonica",
+    ("arquitectonico", "seguridad"): "seguridad_arquitectonica",
+    ("vehicular", "seguridad"): "seguridad_vehicular",
+}
+
+
 def _producto(id_producto: str) -> dict[str, Any] | None:
     for p in configuracion()["productos"]:
         if p["id"] == id_producto:
