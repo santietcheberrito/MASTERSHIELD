@@ -103,7 +103,7 @@ async def enviar(token: str, chat_id: str, texto: str) -> str | None:
     """
     import httpx
 
-    async with httpx.AsyncClient(timeout=20) as cliente:
+    async with httpx.AsyncClient(timeout=60.0) as cliente:
         respuesta = await cliente.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
             json={"chat_id": chat_id, "text": texto},

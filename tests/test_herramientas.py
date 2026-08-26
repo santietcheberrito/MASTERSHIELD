@@ -8,6 +8,7 @@ calificación a la que le falta el teléfono.
 import pytest
 
 from app.agente import herramientas
+from app.telefono import normalizar
 
 pytestmark = [pytest.mark.db, pytest.mark.usefixtures("settings_de_prueba")]
 
@@ -18,8 +19,13 @@ async def _conversacion(conexion, datos=None) -> int:
         "herramientas-test",
     )
     if datos:
+        # La columna `telefono` la llena `guardar_dato`, no el jsonb. El helper
+        # tiene que hacer lo mismo o los tests parten de un estado imposible.
         await conexion.execute(
-            "UPDATE conversaciones SET datos = $2::jsonb WHERE id = $1", id_conv, datos
+            "UPDATE conversaciones SET datos = $2::jsonb, telefono = $3 WHERE id = $1",
+            id_conv,
+            datos,
+            normalizar(str(datos["telefono"])) if datos.get("telefono") else None,
         )
     return id_conv
 
@@ -244,6 +250,7 @@ async def test_el_telefono_se_guarda_normalizado_en_su_columna(pool_en_transacci
     r = await herramientas.guardar_dato(id_conv, "telefono", "0999123456")
 
     assert r["guardado"] is True
+    assert r["telefono_normalizado"] == "+593999123456"
     assert await conexion.fetchval(
         "SELECT telefono FROM conversaciones WHERE id = $1", id_conv
     ) == "+593999123456"
@@ -276,3 +283,31 @@ async def test_otros_campos_no_tocan_la_columna_telefono(pool_en_transaccion):
     assert await conexion.fetchval(
         "SELECT telefono FROM conversaciones WHERE id = $1", id_conv
     ) == "+593999123456"
+
+
+async def test_no_cierra_con_un_telefono_que_no_se_pudo_normalizar(pool_en_transaccion):
+    """El asesor llama por teléfono. Que el cliente confirme el número antes de
+    cerrar, en vez de descubrirlo cuando alguien marque."""
+    conexion = pool_en_transaccion
+    id_conv = await _conversacion(conexion, {**COMPLETO, "telefono": "1234"})
+
+    r = await herramientas.finalizar_calificacion(id_conv)
+
+    assert r["finalizada"] is False
+    assert r["falta"] == ["telefono"]
+    assert "confirme" in r["mensaje"]
+
+
+async def test_al_cerrar_devuelve_el_telefono_para_confirmarlo(pool_en_transaccion):
+    """Es la última oportunidad de detectar un dígito mal."""
+    conexion = pool_en_transaccion
+    id_conv = await _conversacion(conexion, {k: v for k, v in COMPLETO.items() if k != "telefono"})
+    await herramientas.guardar_dato(id_conv, "telefono", "0999123456")
+    await herramientas.guardar_dato(id_conv, "disponibilidad", "jueves por la mañana")
+
+    r = await herramientas.finalizar_calificacion(id_conv)
+
+    assert r["finalizada"] is True
+    assert r["telefono_confirmado"] == "+593999123456"
+    assert r["disponibilidad"] == "jueves por la mañana"
+    assert "+593999123456" in r["mensaje"]

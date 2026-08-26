@@ -54,7 +54,7 @@ class Poller:
             logger.info("poller de Telegram detenido")
 
     async def _loop(self) -> None:
-        async with httpx.AsyncClient(timeout=ESPERA_LARGA + 10) as cliente:
+        async with httpx.AsyncClient(timeout=ESPERA_LARGA + 30) as cliente:
             while self._corriendo:
                 try:
                     await self.una_vuelta(cliente)

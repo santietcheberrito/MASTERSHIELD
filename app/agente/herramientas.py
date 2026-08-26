@@ -98,7 +98,10 @@ async def guardar_dato(conversacion_id: int, campo: str, valor: Any) -> dict[str
         return {"error": "no se pudo guardar: la conversacion no existe"}
 
     logger.info("dato guardado | conversacion=%s %s=%r", conversacion_id, campo, valor)
-    return {"guardado": True, "campo": campo, "valor": valor, "datos_actuales": datos}
+    resultado: dict[str, Any] = {"guardado": True, "campo": campo, "valor": valor, "datos_actuales": datos}
+    if campo == "telefono" and normalizado is not None:
+        resultado["telefono_normalizado"] = normalizado
+    return resultado
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +194,11 @@ async def finalizar_calificacion(conversacion_id: int) -> dict[str, Any]:
     El scoring y la carga a Kommo se enganchan aca (sesiones 5 y 3). Por ahora
     marca la conversacion y deja el evento para auditoria.
     """
-    datos = await db.valor("SELECT datos FROM conversaciones WHERE id = $1", conversacion_id) or {}
+    fila = await db.consultar_una(
+        "SELECT datos, telefono FROM conversaciones WHERE id = $1", conversacion_id
+    )
+    datos = (fila["datos"] if fila else None) or {}
+    telefono = fila["telefono"] if fila else None
 
     linea = datos.get("linea")
     requeridos_por_linea = calificacion()["requeridos_por_linea"]
@@ -206,6 +213,19 @@ async def finalizar_calificacion(conversacion_id: int) -> dict[str, Any]:
             "finalizada": False,
             "falta": faltan,
             "mensaje": "faltan datos sin los cuales el vendedor no puede llamar",
+        }
+
+    # El telefono esta en `datos` pero no se pudo normalizar. Sin numero valido
+    # la calificacion no sirve: el asesor llama por telefono. Que el cliente lo
+    # confirme antes de cerrar, en vez de descubrirlo cuando alguien marque.
+    if telefono is None:
+        return {
+            "finalizada": False,
+            "falta": ["telefono"],
+            "mensaje": (
+                f"el numero {datos.get('telefono')!r} no parece un telefono "
+                "ecuatoriano valido. Pidale que lo confirme."
+            ),
         }
 
     if datos.get("zona") == "fuera_del_pais":
@@ -229,7 +249,13 @@ async def finalizar_calificacion(conversacion_id: int) -> dict[str, Any]:
     return {
         "finalizada": True,
         "datos": datos,
-        "mensaje": "calificacion cerrada. Un asesor MS va a llamar para coordinar la visita",
+        "telefono_confirmado": telefono,
+        "disponibilidad": datos.get("disponibilidad"),
+        "mensaje": (
+            "Calificacion cerrada. Al despedirse, envie un unico mensaje de confirmacion "
+            f"indicando que un asesor MS lo llamara ({datos.get('disponibilidad') or 'proximamente'}) "
+            f"al numero {telefono} (con prefijo +593), y pida al cliente confirmar si el numero y el horario son correctos."
+        ),
     }
 
 
