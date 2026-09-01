@@ -21,6 +21,17 @@ from app.telefono import normalizar
 
 logger = logging.getLogger(__name__)
 
+# Los campos de texto libre terminan renderizados DENTRO del prompt del sistema
+# ("lo que ya sabe de esta conversacion"), asi que son un vector de inyeccion de
+# segundo orden: el cliente escribe instrucciones, se persisten, y en el turno
+# siguiente el modelo las lee como si vinieran del sistema.
+#
+# Hoy el modelo se niega a guardar payloads obvios, pero eso es criterio suyo y
+# no una garantia. El limite de largo y el aplastado de saltos de linea si lo
+# son: sin saltos no se pueden fabricar encabezados falsos, y con 200 caracteres
+# no entra una instruccion elaborada.
+LARGO_MAXIMO_TEXTO = 200
+
 # ---------------------------------------------------------------------------
 # guardar_dato
 # ---------------------------------------------------------------------------
@@ -45,6 +56,9 @@ async def guardar_dato(conversacion_id: int, campo: str, valor: Any) -> dict[str
             "error": f"valor invalido para {campo!r}",
             "valores_validos": valores,
         }
+
+    if definicion.get("tipo") == "texto":
+        valor = " ".join(str(valor).split())[:LARGO_MAXIMO_TEXTO]
 
     if definicion.get("tipo") == "numero":
         try:

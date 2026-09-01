@@ -38,6 +38,14 @@ def avisar_credenciales(settings: Settings) -> None:
     if faltantes:
         logger.warning("credenciales sin configurar: %s", ", ".join(faltantes))
 
+    # Sin secreto, el endpoint acepta cualquier POST: cualquiera puede fabricar
+    # conversaciones y hacernos gastar llamadas al modelo. En polling no hay
+    # endpoint expuesto, asi que solo importa en modo webhook.
+    if settings.telegram_modo == "webhook" and not settings.telegram_webhook_secret:
+        logger.error(
+            "TELEGRAM_MODO=webhook sin TELEGRAM_WEBHOOK_SECRET: el endpoint queda abierto"
+        )
+
 
 @asynccontextmanager
 async def ciclo_de_vida(app: FastAPI):

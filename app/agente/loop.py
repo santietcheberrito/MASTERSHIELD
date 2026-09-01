@@ -78,7 +78,12 @@ def armar_sistema(datos: dict | None) -> list[dict]:
     ]
 
     if datos:
-        conocido = "\n".join(f"- {k}: {v}" for k, v in sorted(datos.items()))
+        # Aplastado y acotado tambien aca, ademas de en guardar_dato: si un dato
+        # entro a la base por otro camino, no puede fabricar una seccion falsa
+        # dentro del prompt del sistema.
+        conocido = "\n".join(
+            f"- {k}: {' '.join(str(v).split())[:200]}" for k, v in sorted(datos.items())
+        )
         estado = f"{conocido}\n\nNo vuelva a preguntar nada de esto."
     else:
         estado = "Todavia nada. Es el arranque de la conversacion."
