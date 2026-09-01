@@ -281,3 +281,64 @@ async def test_pendiente_sin_mensajes_se_limpia(pool_en_transaccion, turnos):
 
     assert turnos == []
     assert await conexion.fetchval("SELECT count(*) FROM pendientes") == 0
+
+
+# --- uso anómalo ------------------------------------------------------------
+
+@pytest.mark.db
+async def test_una_rafaga_no_llega_a_gastar_una_llamada_al_modelo(
+    pool_en_transaccion, monkeypatch, settings_de_prueba
+):
+    """El control está antes de llamar al modelo, que es donde está el costo."""
+    from app.agente import loop as loop_agente
+
+    conexion = pool_en_transaccion
+    await ingesta.registrar(mensaje(1), 6)
+    id_conv = await _id_conversacion(conexion)
+    for n in range(12):
+        await conexion.execute(
+            "INSERT INTO mensajes (conversacion_id, rol, contenido, id_externo) "
+            "VALUES ($1, 'cliente', 'spam', $2)", id_conv, f"flood:{n}",
+        )
+    await _vencer(conexion)
+
+    async def _no_deberia_llamarse(conversacion_id):
+        raise AssertionError("no tendría que haber llamado al modelo")
+
+    enviados = []
+
+    async def _enviar(turno, texto):
+        enviados.append(texto)
+        return None
+
+    monkeypatch.setattr(loop_agente, "responder", _no_deberia_llamarse)
+    monkeypatch.setattr(worker, "_enviar", _enviar)
+
+    await worker.Worker().una_vuelta()
+
+    assert await conexion.fetchval(
+        "SELECT estado FROM conversaciones WHERE id = $1", id_conv
+    ) == "derivada"
+    assert len(enviados) == 1, "se avisa una sola vez"
+    evento = await conexion.fetchrow(
+        "SELECT detalle FROM eventos WHERE conversacion_id = $1 AND tipo = 'escalado_a_humano'",
+        id_conv,
+    )
+    assert "uso anomalo" in evento["detalle"]["motivo"]
+
+
+@pytest.mark.db
+async def test_una_conversacion_normal_no_se_deriva(
+    pool_en_transaccion, monkeypatch, settings_de_prueba, turnos
+):
+    conexion = pool_en_transaccion
+    await ingesta.registrar(mensaje(1), 6)
+    await _vencer(conexion)
+
+    await worker.Worker().una_vuelta()
+
+    assert len(turnos) == 1
+    assert await conexion.fetchval(
+        "SELECT estado FROM conversaciones WHERE id = $1",
+        await _id_conversacion(conexion),
+    ) == "activa"

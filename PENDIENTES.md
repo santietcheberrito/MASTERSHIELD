@@ -123,6 +123,21 @@ Kommo es agregar un destino, no rehacer nada.
   que no mandamos nosotros, la API de bots de Telegram no. Hoy hay que pausar
   a mano.
 
+## Seguridad
+
+- [x] **Tope de uso por conversación.** 30 mensajes por hora, 10 por minuto, un
+  mensaje de más de 4000 caracteres, o 200 mensajes en total: cualquiera de esos
+  corta antes de llamar al modelo, deriva la conversación y la sube al CRM con
+  etapa "Derivado a un asesor", que es por donde el equipo se entera.
+- [x] **Verificación del precio antes de enviar.** Si el mensaje menciona plata
+  que no salió de `calcular_precio` en ese turno, no se envía.
+- [ ] **Límite de gasto en la consola de Anthropic.** Es el único que funciona
+  aunque nuestro código tenga un bug. Se pone en la configuración de la cuenta,
+  no requiere código, y conviene hacerlo antes del deploy.
+- [ ] **Guardar los tokens de cada turno.** Hoy se loguean pero no se
+  persisten, así que no sabemos cuánto cuesta una conversación. Va con el
+  endpoint de métricas de la sesión 7.
+
 ## Calibración pendiente
 
 - [x] **Metros cuadrados mínimos.** Son 5 m². Lo dijo el cliente.

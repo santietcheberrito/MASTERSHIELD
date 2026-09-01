@@ -84,6 +84,15 @@ class Settings(BaseSettings):
     modelo_agente: str = "claude-sonnet-5"
     max_iteraciones_herramientas: int = Field(default=6, gt=0, le=20)
 
+    # Topes de uso. Pasado cualquiera de estos, el agente deja de contestar esa
+    # conversacion y se avisa a una persona para que mire quien es. No son
+    # limites para el cliente comun: son para que un script no nos haga una
+    # factura. Ver app/limites.py.
+    mensajes_por_hora_max: int = Field(default=30, gt=0)
+    mensajes_por_minuto_max: int = Field(default=10, gt=0)
+    largo_maximo_mensaje: int = Field(default=4000, gt=0)
+    mensajes_totales_max: int = Field(default=200, gt=0)
+
     log_level: str = "INFO"
 
     @field_validator("database_url")

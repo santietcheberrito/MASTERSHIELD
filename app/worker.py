@@ -17,8 +17,8 @@ from datetime import datetime
 
 import asyncpg
 
-from app import db, humanizacion
-from app.agente import loop
+from app import db, humanizacion, limites
+from app.agente import herramientas, loop
 from app.canales import telegram
 from app.config import obtener_settings
 
@@ -33,6 +33,12 @@ LOCK_SEGUNDOS = 120
 # posterga una hora para no gastar el loop en algo que esta roto.
 MAX_INTENTOS = 3
 POSTERGACION_SEGUNDOS = 3600
+
+# Lo que se le dice a alguien cuya conversacion se derivo por uso anomalo. Es
+# neutro a proposito: puede ser un cliente entusiasta y no un atacante.
+MENSAJE_LIMITE = (
+    "Prefiero que siga con usted un asesor MS. En un momento se comunican."
+)
 
 _TOMAR = """
     UPDATE pendientes SET
@@ -159,6 +165,13 @@ async def procesar_turno(turno: Turno) -> None:
         turno.texto.replace("\n", " / "),
     )
 
+    # Antes de gastar una llamada al modelo: ¿esta conversacion se ve normal?
+    # El control va aca y no en el webhook porque aca es donde esta el costo, y
+    # porque el webhook tiene un presupuesto de 500ms que no conviene gastar en
+    # una consulta mas.
+    if await _uso_anomalo(turno):
+        return
+
     respuesta = await loop.responder(turno.conversacion_id)
 
     logger.info(
@@ -196,6 +209,40 @@ async def procesar_turno(turno: Turno) -> None:
             "mensaje %s/%s enviado tras %.1fs | conversacion=%s | %s",
             numero, len(partes), espera, turno.conversacion_id, parte,
         )
+
+
+async def _uso_anomalo(turno: Turno) -> bool:
+    """Corta y avisa si la conversacion se ve rara. Devuelve si hubo que cortar.
+
+    No rechaza al cliente: deja de gastar y deriva a una persona para que mire
+    quien es. Si resulta legitimo, un asesor retoma.
+    """
+    settings = obtener_settings()
+    motivo = await limites.revisar(
+        turno.conversacion_id,
+        por_hora=settings.mensajes_por_hora_max,
+        por_minuto=settings.mensajes_por_minuto_max,
+        largo_maximo=settings.largo_maximo_mensaje,
+        total_maximo=settings.mensajes_totales_max,
+    )
+    if motivo is None:
+        return False
+
+    logger.error(
+        "uso anomalo, se deriva sin llamar al modelo | conversacion=%s: %s",
+        turno.conversacion_id, motivo,
+    )
+    # Deja la conversacion en 'derivada' y la sube al CRM con esa etapa, que es
+    # por donde el equipo se entera.
+    await herramientas.escalar_a_humano(
+        turno.conversacion_id, f"uso anomalo: {motivo}"
+    )
+    try:
+        await _enviar(turno, MENSAJE_LIMITE)
+    except Exception:
+        logger.exception("no se pudo avisar al cliente | conversacion=%s",
+                         turno.conversacion_id)
+    return True
 
 
 async def _mostrar_escribiendo(turno: Turno, segundos: float) -> None:
