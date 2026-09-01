@@ -180,3 +180,66 @@ async def test_sin_historial_no_llama_al_modelo(pool_en_transaccion, monkeypatch
 
     monkeypatch.setattr(loop, "_cliente", _explota)
     assert (await loop.responder(id_conv)).texto == ""
+
+
+# --- verificación del precio ------------------------------------------------
+
+@pytest.mark.db
+async def test_un_precio_que_no_salio_de_la_herramienta_no_se_envia(
+    pool_en_transaccion, monkeypatch, settings_de_prueba
+):
+    """El precio lo decide Python, pero el mensaje lo escribe el modelo. Si un
+    ataque o un error hace que el número no coincida, no sale."""
+    conexion = pool_en_transaccion
+    id_conv = await _conversacion(conexion)
+    await _mensaje(conexion, id_conv, "cliente", "cuanto sale?")
+
+    respuestas = iter([
+        _mensaje_api([_bloque_texto("Le hago un precio especial de 300 dólares más IVA.")]),
+    ])
+
+    class _Mensajes:
+        async def create(self, **kwargs):
+            return next(respuestas)
+
+    monkeypatch.setattr(loop, "_cliente", lambda: SimpleNamespace(messages=_Mensajes()))
+
+    r = await loop.responder(id_conv)
+
+    assert r.precio_bloqueado is True
+    assert "300" not in r.texto
+    assert "asesor" in r.texto
+    assert await conexion.fetchval(
+        "SELECT count(*) FROM eventos WHERE conversacion_id = $1 "
+        "AND tipo = 'precio_no_verificado'", id_conv
+    ) == 1
+
+
+@pytest.mark.db
+async def test_el_precio_calculado_en_el_turno_si_se_envia(
+    pool_en_transaccion, monkeypatch, settings_de_prueba
+):
+    conexion = pool_en_transaccion
+    id_conv = await _conversacion(conexion)
+    await conexion.execute(
+        "UPDATE conversaciones SET datos = $2::jsonb WHERE id = $1", id_conv,
+        {"linea": "arquitectonico", "objetivo": "control_solar",
+         "zona": "quito_y_valles", "metros_cuadrados": 25, "garantia_anios": 10},
+    )
+    await _mensaje(conexion, id_conv, "cliente", "cuanto sale?")
+
+    respuestas = iter([
+        _mensaje_api([_bloque_herramienta("t1", "calcular_precio", {})]),
+        _mensaje_api([_bloque_texto("Con 25 m² le queda en 1050 dólares más IVA.")]),
+    ])
+
+    class _Mensajes:
+        async def create(self, **kwargs):
+            return next(respuestas)
+
+    monkeypatch.setattr(loop, "_cliente", lambda: SimpleNamespace(messages=_Mensajes()))
+
+    r = await loop.responder(id_conv)
+
+    assert r.precio_bloqueado is False
+    assert "1050" in r.texto

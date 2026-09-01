@@ -16,7 +16,7 @@ from pathlib import Path
 
 from anthropic import AsyncAnthropic
 
-from app import db
+from app import db, verificacion
 from app.agente import herramientas
 from app.config import obtener_settings
 
@@ -39,6 +39,10 @@ class Respuesta:
     tokens_entrada: int = 0
     tokens_salida: int = 0
     tokens_cache_leidos: int = 0
+    # True si el mensaje mencionaba un precio que no coincidia con lo calculado
+    # y hubo que reemplazarlo. Deberia ser siempre False: si aparece, hay algo
+    # que investigar.
+    precio_bloqueado: bool = False
 
 
 @lru_cache
@@ -183,6 +187,9 @@ async def responder(conversacion_id: int) -> Respuesta:
     # texto de la ultima vuelta, esa respuesta se pierde y al cliente le llega
     # unicamente la repregunta que vino despues de los resultados.
     partes: list[str] = []
+    # Los montos que devolvio calcular_precio en este turno. Son los unicos que
+    # el mensaje tiene permitido mencionar.
+    montos_autorizados: set[float] = set()
 
     for iteracion in range(1, settings.max_iteraciones_herramientas + 1):
         mensaje = await cliente.messages.create(
@@ -205,6 +212,7 @@ async def responder(conversacion_id: int) -> Respuesta:
             if texto:
                 partes.append(texto)
             respuesta.texto = "\n".join(partes)
+            await _verificar_precios(respuesta, conversacion_id, montos_autorizados)
             return respuesta
 
         historial.append({"role": "assistant", "content": mensaje.content})
@@ -213,6 +221,11 @@ async def responder(conversacion_id: int) -> Respuesta:
         for llamada in llamadas:
             resultado = await herramientas.ejecutar(llamada.name, conversacion_id, llamada.input)
             respuesta.herramientas_usadas.append(llamada.name)
+            if llamada.name == "calcular_precio" and resultado.get("puede_cotizar"):
+                montos_autorizados.update(
+                    v for v in (resultado.get("subtotal_sin_iva"),
+                                resultado.get("precio_m2_sin_iva")) if v is not None
+                )
             logger.info(
                 "herramienta | conversacion=%s %s(%s)",
                 conversacion_id,
@@ -240,4 +253,33 @@ async def responder(conversacion_id: int) -> Respuesta:
         "se agotaron las iteraciones de herramientas | conversacion=%s", conversacion_id
     )
     respuesta.texto = "\n".join(partes)
+    await _verificar_precios(respuesta, conversacion_id, montos_autorizados)
     return respuesta
+
+
+async def _verificar_precios(
+    respuesta: Respuesta, conversacion_id: int, autorizados: set[float]
+) -> None:
+    """Ultimo control antes de enviar: que el numero del mensaje sea el calculado.
+
+    El precio lo decide Python, pero el mensaje lo escribe el modelo. Si no
+    coinciden, no se manda: un precio equivocado dicho a un cliente real es un
+    problema comercial, no un detalle.
+    """
+    esta_bien, motivo = verificacion.verificar(respuesta.texto, autorizados)
+    if esta_bien:
+        return
+
+    logger.error(
+        "precio no verificado, mensaje reemplazado | conversacion=%s: %s | texto=%r",
+        conversacion_id, motivo, respuesta.texto,
+    )
+    await db.ejecutar(
+        "INSERT INTO eventos (conversacion_id, tipo, estado, detalle) "
+        "VALUES ($1, 'precio_no_verificado', 'error', $2)",
+        conversacion_id,
+        {"motivo": motivo, "texto": respuesta.texto,
+         "autorizados": sorted(autorizados)},
+    )
+    respuesta.texto = verificacion.MENSAJE_SEGURO
+    respuesta.precio_bloqueado = True
