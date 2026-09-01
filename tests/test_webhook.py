@@ -34,8 +34,8 @@ def registrados(monkeypatch):
     """Reemplaza la ingesta: acá se testea el endpoint, no la persistencia."""
     capturados = []
 
-    async def _registrar(mensaje, ventana_seg):
-        capturados.append((mensaje, ventana_seg))
+    async def _registrar(mensaje, demora_seg):
+        capturados.append((mensaje, demora_seg))
         return True
 
     monkeypatch.setattr(ingesta, "registrar", _registrar)
@@ -65,10 +65,10 @@ def test_update_valido_se_registra(cliente, registrados):
     assert cliente.post(RUTA, json=UPDATE).status_code == 200
 
     assert len(registrados) == 1
-    mensaje, ventana = registrados[0]
+    mensaje, demora = registrados[0]
     assert mensaje.identificador == "7"
     assert mensaje.id_externo == "telegram:7:42"
-    assert ventana == 30, "el default de VENTANA_BUFFER_SEG"
+    assert 60 <= demora <= 120, "la demora se sortea en el rango configurado"
 
 
 def test_update_que_no_es_mensaje_se_acepta_sin_registrar(cliente, registrados):
@@ -90,7 +90,7 @@ def test_falla_de_base_devuelve_503(cliente, monkeypatch):
     canal es lo unico que impide perderlo. El indice unico sobre id_externo
     garantiza que ese reintento no genere una respuesta duplicada."""
 
-    async def _explota(mensaje, ventana_seg):
+    async def _explota(mensaje, demora_seg):
         raise ConnectionError("la base no responde")
 
     monkeypatch.setattr(ingesta, "registrar", _explota)

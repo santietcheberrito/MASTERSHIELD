@@ -113,5 +113,5 @@ Ver [PENDIENTES.md](PENDIENTES.md) para lo que falta y qué bloquea cada cosa.
 | `prompts/` | provisorio: falta la revisión de MasterShield |
 | `app/scoring.py` | listo, con pesos **provisorios** hasta el kick off |
 | `app/crm/documento.py` | listo: el lead que se carga en el CRM |
-| `app/whatsapp/` | sesión 6, requiere kick off |
+| `app/humanizacion.py` | listo: demoras, partido de mensajes |
 | deploy y `/metricas` | sesión 7 |

@@ -17,7 +17,7 @@ from datetime import datetime
 
 import asyncpg
 
-from app import db
+from app import db, humanizacion
 from app.agente import loop
 from app.canales import telegram
 from app.config import obtener_settings
@@ -145,11 +145,12 @@ def armar_turno(conversacion_id: int, filas: list[asyncpg.Record]) -> Turno | No
 
 
 async def procesar_turno(turno: Turno) -> None:
-    """Corre el agente y manda la respuesta.
+    """Corre el agente y manda la respuesta como la mandaria una persona.
 
-    Sin delays ni partido de mensajes: eso es de la sesion 6. El cliente pidio
-    ademas un retraso de 60 a 120 segundos antes de responder, que tambien va
-    ahi junto con la supersesion.
+    El retraso de 60 a 120 segundos que pidio el cliente NO esta aca: ya paso
+    antes de que este turno se tomara, porque es la ventana del buffer. Ver
+    app/humanizacion.py. Lo que si pasa aca es el partido en varios mensajes y
+    las pausas entre ellos.
     """
     logger.info(
         "turno armado | conversacion=%s mensajes=%s | %s",
@@ -178,12 +179,48 @@ async def procesar_turno(turno: Turno) -> None:
         logger.warning("el agente no produjo texto | conversacion=%s", turno.conversacion_id)
         return
 
-    id_externo = await _enviar(turno, respuesta.texto)
-    await db.ejecutar(_GUARDAR_RESPUESTA, turno.conversacion_id, respuesta.texto, id_externo)
+    partes = humanizacion.partir(respuesta.texto)
+    logger.info(
+        "enviando %s mensaje(s) | conversacion=%s", len(partes), turno.conversacion_id
+    )
+
+    for numero, parte in enumerate(partes, 1):
+        # "Escribiendo..." y despues la pausa: el indicador solo tiene sentido
+        # mientras se supone que se esta tipeando, no durante toda la espera.
+        espera = humanizacion.demora_de_escritura(parte)
+        await _mostrar_escribiendo(turno, espera)
+
+        id_externo = await _enviar(turno, parte)
+        await db.ejecutar(_GUARDAR_RESPUESTA, turno.conversacion_id, parte, id_externo)
+        logger.info(
+            "mensaje %s/%s enviado tras %.1fs | conversacion=%s | %s",
+            numero, len(partes), espera, turno.conversacion_id, parte,
+        )
+
+
+async def _mostrar_escribiendo(turno: Turno, segundos: float) -> None:
+    """Mantiene el indicador mientras dura la pausa.
+
+    Telegram lo apaga solo a los ~5 segundos, asi que hay que renovarlo. Si
+    falla, no importa: es cosmetico y no puede impedir que el mensaje salga.
+    """
+    settings = obtener_settings()
+    restante = segundos
+    while restante > 0:
+        if turno.canal == "telegram" and settings.telegram_bot_token:
+            try:
+                await telegram.indicar_escribiendo(
+                    settings.telegram_bot_token, turno.identificador
+                )
+            except Exception:
+                logger.debug("no se pudo mostrar el indicador de escribiendo")
+        tramo = min(4.0, restante)
+        await asyncio.sleep(tramo)
+        restante -= tramo
 
 
 async def _enviar(turno: Turno, texto: str) -> str | None:
-    """Manda la respuesta por el canal de la conversacion."""
+    """Manda un mensaje por el canal de la conversacion."""
     settings = obtener_settings()
     if turno.canal == "telegram":
         if not settings.telegram_bot_token:
@@ -241,10 +278,14 @@ class Worker:
             logger.exception("no se pudieron tomar conversaciones pendientes")
             return 0
 
-        for fila in tomadas:
-            await self._procesar_una(
+        # En paralelo: mandar una respuesta partida con pausas lleva decenas de
+        # segundos, y una conversacion no puede hacer esperar a las demas.
+        await asyncio.gather(*(
+            self._procesar_una(
                 fila["conversacion_id"], fila["procesar_despues"], fila["intentos"]
             )
+            for fila in tomadas
+        ))
         return len(tomadas)
 
     async def _procesar_una(

@@ -64,10 +64,12 @@ class Settings(BaseSettings):
     notion_token: str = ""
     notion_data_source_id: str = ""
 
-    # 30s y no 6: desde que el cliente pidio un retraso de 1-2 minutos antes de
-    # responder, recolectar mensajes durante mas tiempo sale gratis. La ventana
-    # va DENTRO de ese presupuesto, no encima. Ver "Humanizacion" en CLAUDE.md.
-    ventana_buffer_seg: int = Field(default=30, gt=0, le=120)
+    # El cliente pidio que el agente no conteste al instante sino que espere
+    # entre 1 y 2 minutos. Ese retraso ES la ventana del buffer: se sortea por
+    # mensaje y corre `procesar_despues`, asi el agente no empieza a pensar
+    # hasta que paso el tiempo. Ver app/humanizacion.py.
+    demora_respuesta_min_seg: int = Field(default=60, gt=0, le=600)
+    demora_respuesta_max_seg: int = Field(default=120, gt=0, le=600)
     horario_atencion: str = "09:00-18:00"
 
     # El cliente opera en Quito. La zona horaria no es un detalle de formato:
@@ -131,6 +133,12 @@ class Settings(BaseSettings):
         if not _PREFIJO.match(valor):
             raise ValueError("PREFIJO_TELEFONICO tiene que ser + seguido de 1 a 3 digitos, por ejemplo +593")
         return valor
+
+    @model_validator(mode="after")
+    def _validar_demoras(self) -> "Settings":
+        if self.demora_respuesta_min_seg > self.demora_respuesta_max_seg:
+            raise ValueError("DEMORA_RESPUESTA_MIN_SEG no puede ser mayor que la maxima")
+        return self
 
     @field_validator("telegram_modo")
     @classmethod

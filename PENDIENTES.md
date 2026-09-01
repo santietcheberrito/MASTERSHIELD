@@ -114,9 +114,14 @@ Kommo es agregar un destino, no rehacer nada.
   único que bloquea usar esto con clientes reales.
 - [ ] **Qué determina el precio Normal contra el especial.** Mientras tanto el
   agente cotiza con el normal, el más alto.
-- [ ] **Acortar los mensajes.** El agente todavía manda respuestas de 3 o 4
-  líneas cuando el máximo son 2. Se resuelve en la sesión 6 partiéndolas en
-  varios mensajes con pausas, que es como escribe una persona.
+- [x] **Acortar los mensajes.** Se parten en hasta 3 globos con pausas de
+  1.5 a 7 segundos.
+- [ ] **Detección automática de intervención humana.** El mecanismo está
+  (`ingesta.registrar_intervencion_humana`: pausa la conversación, guarda el
+  mensaje como del vendedor y cancela el turno agendado), pero el disparador
+  depende del canal: la Cloud API de WhatsApp avisa de los mensajes salientes
+  que no mandamos nosotros, la API de bots de Telegram no. Hoy hay que pausar
+  a mano.
 
 ## Calibración pendiente
 

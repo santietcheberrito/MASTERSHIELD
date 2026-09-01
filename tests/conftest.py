@@ -18,7 +18,8 @@ RAIZ = Path(__file__).resolve().parent.parent
 # maquina del que corre los tests no cambie el resultado.
 VARIABLES = (
     "DATABASE_URL",
-    "VENTANA_BUFFER_SEG",
+    "DEMORA_RESPUESTA_MIN_SEG",
+    "DEMORA_RESPUESTA_MAX_SEG",
     "HORARIO_ATENCION",
     "TZ",
     "PAIS",

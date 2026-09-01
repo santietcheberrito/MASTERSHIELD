@@ -15,7 +15,7 @@ import logging
 
 import httpx
 
-from app import ingesta
+from app import humanizacion, ingesta
 from app.canales import telegram
 
 logger = logging.getLogger(__name__)
@@ -24,9 +24,8 @@ ESPERA_LARGA = 25  # segundos que Telegram retiene la peticion si no hay nada
 
 
 class Poller:
-    def __init__(self, token: str, ventana_seg: int) -> None:
+    def __init__(self, token: str) -> None:
         self.token = token
-        self.ventana_seg = ventana_seg
         self._offset: int | None = None
         self._tarea: asyncio.Task | None = None
         self._corriendo = False
@@ -91,7 +90,7 @@ class Poller:
             if mensaje is None:
                 continue
             try:
-                await ingesta.registrar(mensaje, self.ventana_seg)
+                await ingesta.registrar(mensaje, humanizacion.demora_configurada())
             except Exception:
                 logger.exception("no se pudo registrar un update de Telegram")
 

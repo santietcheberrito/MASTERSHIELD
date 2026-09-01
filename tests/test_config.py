@@ -16,7 +16,8 @@ def armar(**extra) -> Settings:
 
 def test_valores_por_defecto():
     s = armar()
-    assert s.ventana_buffer_seg == 30
+    assert s.demora_respuesta_min_seg == 60
+    assert s.demora_respuesta_max_seg == 120
     assert s.horario_atencion == "09:00-18:00"
     assert s.tz == "America/Guayaquil"
     assert s.pais == "EC"
@@ -26,10 +27,10 @@ def test_valores_por_defecto():
 
 def test_lee_del_entorno(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", URL)
-    monkeypatch.setenv("VENTANA_BUFFER_SEG", "10")
+    monkeypatch.setenv("DEMORA_RESPUESTA_MIN_SEG", "10")
     monkeypatch.setenv("LOG_LEVEL", "debug")
     s = Settings(_env_file=None)
-    assert s.ventana_buffer_seg == 10
+    assert s.demora_respuesta_min_seg == 10
     assert s.log_level == "DEBUG"
 
 
@@ -64,10 +65,15 @@ def test_database_url_sin_host():
         Settings(_env_file=None, database_url="postgresql:///base")
 
 
-@pytest.mark.parametrize("valor", [0, -1, 121])
-def test_ventana_buffer_fuera_de_rango(valor):
+@pytest.mark.parametrize("valor", [0, -1, 601])
+def test_demora_fuera_de_rango(valor):
     with pytest.raises(ValidationError):
-        armar(ventana_buffer_seg=valor)
+        armar(demora_respuesta_min_seg=valor)
+
+
+def test_la_demora_minima_no_puede_superar_a_la_maxima():
+    with pytest.raises(ValidationError):
+        armar(demora_respuesta_min_seg=200, demora_respuesta_max_seg=100)
 
 
 @pytest.mark.parametrize(

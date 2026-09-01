@@ -11,7 +11,7 @@ import logging
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response
 
-from app import ingesta
+from app import humanizacion, ingesta
 from app.canales import telegram
 from app.config import obtener_settings
 
@@ -46,7 +46,7 @@ async def recibir_telegram(
         return Response(status_code=200)
 
     try:
-        await ingesta.registrar(mensaje, settings.ventana_buffer_seg)
+        await ingesta.registrar(mensaje, humanizacion.demora_configurada())
     except Exception:
         logger.exception("no se pudo registrar el update de Telegram")
         # 503 y no 200: si la base no responde, el mensaje todavia no existe en

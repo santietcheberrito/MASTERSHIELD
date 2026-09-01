@@ -188,3 +188,65 @@ async def test_si_vuelve_a_escribir_se_retoma_la_conversacion(pool_en_transaccio
     assert reabierta["id"] == conv["id"]
     assert reabierta["estado"] == "activa"
     assert await _cuantas(conexion, "7") == 1
+
+
+# --- intervención humana ----------------------------------------------------
+
+async def test_si_un_vendedor_contesta_el_agente_se_calla(pool_en_transaccion):
+    """Dos respuestas a la vez, una del vendedor y otra del agente, es lo peor
+    que puede ver un cliente."""
+    conexion = pool_en_transaccion
+    await ingesta.registrar(mensaje(1), 60)
+    conv = await conversacion_de(conexion)
+    assert await conexion.fetchval("SELECT count(*) FROM pendientes WHERE conversacion_id=$1",
+                                   conv["id"]) == 1
+
+    id_conv = await ingesta.registrar_intervencion_humana(
+        "telegram", "7", "Buenas, le escribe Juan de MasterShield", "telegram:7:manual-1"
+    )
+
+    assert id_conv == conv["id"]
+    assert (await conversacion_de(conexion))["estado"] == "pausada"
+    # El turno agendado se cancela: si no, la respuesta del agente llegaría
+    # encima de la del vendedor.
+    assert await conexion.fetchval(
+        "SELECT count(*) FROM pendientes WHERE conversacion_id=$1", conv["id"]
+    ) == 0
+    assert await conexion.fetchval(
+        "SELECT rol FROM mensajes WHERE conversacion_id=$1 ORDER BY id DESC LIMIT 1", conv["id"]
+    ) == "vendedor"
+
+
+async def test_estando_pausada_los_mensajes_se_guardan_pero_no_se_contestan(
+    pool_en_transaccion,
+):
+    conexion = pool_en_transaccion
+    await ingesta.registrar(mensaje(1), 60)
+    await ingesta.registrar_intervencion_humana("telegram", "7", "le escribe Juan", "m-1")
+
+    assert await ingesta.registrar(mensaje(2), 60) is True
+
+    conv = await conversacion_de(conexion)
+    assert conv["estado"] == "pausada"
+    assert await conexion.fetchval(
+        "SELECT count(*) FROM mensajes WHERE conversacion_id=$1", conv["id"]
+    ) == 3
+    assert await conexion.fetchval(
+        "SELECT count(*) FROM pendientes WHERE conversacion_id=$1", conv["id"]
+    ) == 0
+
+
+async def test_una_conversacion_derivada_no_se_vuelve_a_pausar(pool_en_transaccion):
+    conexion = pool_en_transaccion
+    await ingesta.registrar(mensaje(1), 60)
+    conv = await conversacion_de(conexion)
+    await conexion.execute("UPDATE conversaciones SET estado='derivada' WHERE id=$1", conv["id"])
+
+    assert await ingesta.registrar_intervencion_humana("telegram", "7", "hola", "m-2") is None
+    assert (await conversacion_de(conexion))["estado"] == "derivada"
+
+
+async def test_sin_conversacion_no_pasa_nada(pool_en_transaccion):
+    assert await ingesta.registrar_intervencion_humana(
+        "telegram", "999999", "hola", "m-3"
+    ) is None

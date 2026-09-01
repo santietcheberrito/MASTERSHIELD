@@ -65,7 +65,7 @@ async def ciclo_de_vida(app: FastAPI):
         # El poller solo tiene sentido en desarrollo: en produccion Telegram
         # nos pega al webhook, que es ademas lo unico que soporta WhatsApp.
         if settings.telegram_modo == "polling" and settings.telegram_bot_token:
-            poller = Poller(settings.telegram_bot_token, settings.ventana_buffer_seg)
+            poller = Poller(settings.telegram_bot_token)
             poller.arrancar()
         elif settings.telegram_modo == "polling":
             logger.warning("TELEGRAM_MODO=polling pero no hay TELEGRAM_BOT_TOKEN")
