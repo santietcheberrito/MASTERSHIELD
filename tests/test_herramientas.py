@@ -121,7 +121,7 @@ async def test_vehicular_no_cotiza(pool_en_transaccion):
     )
     r = await herramientas.calcular_precio(id_conv)
     assert r["puede_cotizar"] is False
-    assert r["falta"] == ["modelo_vehiculo", "nivel_seguridad"]
+    assert r["falta"] == ["modelo_vehiculo"]
 
 
 async def test_sin_objetivo_no_sabe_que_producto_es(pool_en_transaccion):

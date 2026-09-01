@@ -119,7 +119,10 @@ productos:
     # que un asesor se comunique. El m2 no es la unidad: el modelo de vehiculo
     # define el tipo (sedan, SUV, camioneta simple o doble cabina, furgoneta) y
     # con eso la cantidad de material y el tipo de trabajo.
+    #
+    # Tampoco pregunta el nivel de seguridad: los niveles no se pueden ofrecer
+    # por chat, asi que preguntarlo lleva a la pregunta que sigue —"¿cuales
+    # hay?"— que el agente no puede contestar. Eso lo define el asesor.
     cotizable: ninguno   # "no" a secas lo parsea YAML como booleano False
     datos_requeridos:
       - modelo_vehiculo
-      - nivel_seguridad

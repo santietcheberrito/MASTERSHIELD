@@ -50,11 +50,6 @@ campos:
     tipo: texto
     requerido: false   # obligatorio en la linea vehicular
 
-  nivel_seguridad:
-    descripcion: "Nivel de seguridad que busca para el vehiculo"
-    tipo: texto
-    requerido: false   # obligatorio en la linea vehicular
-
   telefono:
     descripcion: "Telefono de contacto en formato internacional"
     tipo: texto

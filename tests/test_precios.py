@@ -137,7 +137,7 @@ def test_vehicular_no_se_cotiza_y_pide_los_datos_que_necesita_el_asesor():
     m² no es la unidad; el modelo de vehículo define el tipo y el material."""
     c = cotizar(VEHICULAR, None, QUITO, None)
     assert not c.puede_cotizar
-    assert c.datos_faltantes == ["modelo_vehiculo", "nivel_seguridad"]
+    assert c.datos_faltantes == ["modelo_vehiculo"]
 
 
 def test_vehicular_no_cotiza_ni_con_metros():
