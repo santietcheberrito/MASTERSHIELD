@@ -73,16 +73,30 @@ sí lo hace el agente, con `calcular_precio`.
 | Capa | Tecnología |
 |---|---|
 | Servicio | Python 3.12 + FastAPI + uvicorn |
-| Modelo | Anthropic SDK (Claude) con tool use |
+| Modelo | OpenAI (`gpt-5`) con tool use · ver nota |
 | Base de datos | PostgreSQL (Supabase) + pgvector |
 | Canal | WhatsApp Business API vía BSP |
 | CRM | Kommo API v4 |
 | Deploy | Railway (cuenta del cliente), Docker |
 | Tests | pytest + respx (mock de HTTP) |
 
-Dependencias: `fastapi`, `uvicorn`, `anthropic`, `httpx`, `asyncpg`,
+Dependencias: `fastapi`, `uvicorn`, `anthropic`, `openai`, `httpx`, `asyncpg`,
 `pydantic`, `pydantic-settings`, `pyyaml`, `structlog`, `pytest`,
 `pytest-asyncio`, `respx`.
+
+> **Nota sobre el proveedor del modelo.** El proyecto arrancó sobre Anthropic,
+> como decía este documento. A mitad de camino el cliente se quedó sin créditos
+> y hubo que pasar a OpenAI. Para que eso no fuera una reescritura, el loop de
+> tool use quedó detrás de `app/agente/proveedor.py`: lo que cambia entre uno y
+> otro es la forma de los mensajes, dónde va el prompt del sistema y cómo se
+> devuelven los resultados de las herramientas, no cómo razona el agente.
+> Volver a Claude es cambiar `PROVEEDOR_MODELO` y `MODELO_AGENTE`.
+>
+> `gpt-5` es un modelo de razonamiento: cuenta lo que piensa dentro del mismo
+> presupuesto que lo que escribe. Con el límite de tokens que servía para
+> Sonnet, devolvía mensajes vacíos sin error. Corre con `reasoning_effort` bajo
+> —esto es una conversación de ventas, no un problema de lógica— y con margen
+> de salida más amplio.
 
 ---
 
@@ -343,7 +357,10 @@ reintento y el agente sigue funcionando.
 
 ```
 DATABASE_URL=
+PROVEEDOR_MODELO=openai
+MODELO_AGENTE=gpt-5
 ANTHROPIC_API_KEY=
+OPENAI_API_KEY=
 KOMMO_SUBDOMAIN=
 KOMMO_ACCESS_TOKEN=
 BSP_API_URL=

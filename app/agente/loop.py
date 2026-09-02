@@ -14,10 +14,8 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
-from anthropic import AsyncAnthropic
-
 from app import db, verificacion
-from app.agente import herramientas
+from app.agente import herramientas, proveedor as proveedores
 from app.config import obtener_settings
 
 logger = logging.getLogger(__name__)
@@ -50,20 +48,24 @@ def _leer(nombre: str) -> str:
     return (PROMPTS / nombre).read_text(encoding="utf-8")
 
 
-def _cliente() -> AsyncAnthropic:
-    return AsyncAnthropic(api_key=obtener_settings().anthropic_api_key)
+def _cliente():
+    """El proveedor del modelo, segun la configuracion."""
+    settings = obtener_settings()
+    return proveedores.crear(
+        settings.proveedor_modelo, settings.clave_del_modelo, settings.modelo_agente
+    )
 
 
-def armar_sistema(datos: dict | None) -> list[dict]:
-    """El prompt del sistema, en dos bloques.
+def armar_sistema(datos: dict | None) -> list[str]:
+    """El prompt del sistema, en dos partes.
 
-    El primero es estatico —instrucciones y conocimiento tecnico— y va marcado
-    para cachear: es identico en cada turno de cada conversacion. El segundo es
-    el estado de esta conversacion, que cambia siempre y no se cachea.
+    La primera es estatica —instrucciones y conocimiento tecnico— e identica en
+    cada turno de cada conversacion. La segunda es el estado de esta
+    conversacion, que cambia siempre.
 
-    El TTL de una hora y no el de cinco minutos: con decenas de conversaciones
-    por dia, los huecos entre mensajes superan los cinco minutos seguido y se
-    estaria pagando la escritura del cache todo el tiempo.
+    El orden importa para el costo: los dos proveedores cachean por prefijo, y
+    poner primero lo que no cambia es lo que hace que el descuento aplique.
+    Anthropic ademas lo marca explicitamente; OpenAI lo hace solo.
     """
     estatico = (
         _leer("agente.md")
@@ -72,14 +74,6 @@ def armar_sistema(datos: dict | None) -> list[dict]:
         + "lo confirma un asesor MS.\n\n"
         + _leer("conocimiento.md")
     )
-
-    bloques = [
-        {
-            "type": "text",
-            "text": estatico,
-            "cache_control": {"type": "ephemeral", "ttl": "1h"},
-        }
-    ]
 
     if datos:
         # Aplastado y acotado tambien aca, ademas de en guardar_dato: si un dato
@@ -92,17 +86,11 @@ def armar_sistema(datos: dict | None) -> list[dict]:
     else:
         estado = "Todavia nada. Es el arranque de la conversacion."
 
-    bloques.append(
-        {
-            "type": "text",
-            "text": (
-                f"# Ahora\n\n{_momento()}\n\n"
-                f"# Lo que ya sabe de esta conversacion\n\n{estado}"
-            ),
-        }
+    dinamico = (
+        f"# Ahora\n\n{_momento()}\n\n"
+        f"# Lo que ya sabe de esta conversacion\n\n{estado}"
     )
-
-    return bloques
+    return [estatico, dinamico]
 
 
 def _momento() -> str:
@@ -142,7 +130,7 @@ async def armar_historial(conversacion_id: int) -> list[dict]:
 
     historial: list[dict] = []
     for fila in filas:
-        rol = "user" if fila["rol"] == "cliente" else "assistant"
+        rol = "cliente" if fila["rol"] == "cliente" else "agente"
         texto = fila["contenido"]
         if fila["tipo"] != "texto":
             marca = f"[el cliente envio un archivo de tipo {fila['tipo']}]"
@@ -150,17 +138,17 @@ async def armar_historial(conversacion_id: int) -> list[dict]:
         if not texto:
             continue
 
-        if historial and historial[-1]["role"] == rol:
-            historial[-1]["content"] += "\n" + texto
+        if historial and historial[-1]["rol"] == rol:
+            historial[-1]["texto"] += "\n" + texto
         else:
-            historial.append({"role": rol, "content": texto})
+            historial.append({"rol": rol, "texto": texto})
 
     # La API exige que arranque y termine con un mensaje del usuario. Lo de
     # atras importa mas de lo que parece: si un vendedor escribio ultimo, la
     # llamada devuelve 400 y la conversacion queda sin respuesta.
-    while historial and historial[0]["role"] != "user":
+    while historial and historial[0]["rol"] != "cliente":
         historial.pop(0)
-    while historial and historial[-1]["role"] != "user":
+    while historial and historial[-1]["rol"] != "cliente":
         historial.pop()
 
     return historial
@@ -177,10 +165,11 @@ async def responder(conversacion_id: int) -> Respuesta:
         logger.warning("turno sin historial | conversacion=%s", conversacion_id)
         return Respuesta(texto="")
 
-    cliente = _cliente()
+    proveedor = _cliente()
+    definiciones = herramientas.definiciones()
+    mensajes = proveedor.mensajes_iniciales(armar_sistema(datos), historial)
 
     respuesta = Respuesta(texto="")
-    definiciones = herramientas.definiciones()
 
     # El modelo contesta en el mismo turno en que llama herramientas: primero
     # el bloque de texto, despues los tool_use. Si nos quedaramos solo con el
@@ -192,62 +181,46 @@ async def responder(conversacion_id: int) -> Respuesta:
     montos_autorizados: set[float] = set()
 
     for iteracion in range(1, settings.max_iteraciones_herramientas + 1):
-        mensaje = await cliente.messages.create(
-            model=settings.modelo_agente,
-            max_tokens=1024,
-            system=armar_sistema(datos),
-            tools=definiciones,
-            messages=historial,
-        )
+        salida = await proveedor.completar(mensajes, definiciones)
 
         respuesta.iteraciones = iteracion
-        respuesta.tokens_entrada += mensaje.usage.input_tokens
-        respuesta.tokens_salida += mensaje.usage.output_tokens
-        respuesta.tokens_cache_leidos += getattr(mensaje.usage, "cache_read_input_tokens", 0) or 0
+        respuesta.tokens_entrada += salida.tokens_entrada
+        respuesta.tokens_salida += salida.tokens_salida
+        respuesta.tokens_cache_leidos += salida.tokens_cache
 
-        texto = "".join(b.text for b in mensaje.content if b.type == "text").strip()
-        llamadas = [b for b in mensaje.content if b.type == "tool_use"]
-
-        if not llamadas:
-            if texto:
-                partes.append(texto)
+        if not salida.llamadas:
+            if salida.texto:
+                partes.append(salida.texto)
             respuesta.texto = "\n".join(partes)
             await _verificar_precios(respuesta, conversacion_id, montos_autorizados)
             return respuesta
 
-        historial.append({"role": "assistant", "content": mensaje.content})
-
         resultados = []
-        for llamada in llamadas:
-            resultado = await herramientas.ejecutar(llamada.name, conversacion_id, llamada.input)
-            respuesta.herramientas_usadas.append(llamada.name)
-            if llamada.name == "calcular_precio" and resultado.get("puede_cotizar"):
+        for llamada in salida.llamadas:
+            resultado = await herramientas.ejecutar(
+                llamada.nombre, conversacion_id, llamada.argumentos
+            )
+            respuesta.herramientas_usadas.append(llamada.nombre)
+            if llamada.nombre == "calcular_precio" and resultado.get("puede_cotizar"):
                 montos_autorizados.update(
                     v for v in (resultado.get("subtotal_sin_iva"),
                                 resultado.get("precio_m2_sin_iva")) if v is not None
                 )
             logger.info(
                 "herramienta | conversacion=%s %s(%s)",
-                conversacion_id,
-                llamada.name,
-                json.dumps(llamada.input, ensure_ascii=False),
+                conversacion_id, llamada.nombre,
+                json.dumps(llamada.argumentos, ensure_ascii=False),
             )
-            resultados.append(
-                {
-                    "type": "tool_result",
-                    "tool_use_id": llamada.id,
-                    "content": json.dumps(resultado, ensure_ascii=False, default=str),
-                }
-            )
+            resultados.append((llamada, resultado))
 
-        historial.append({"role": "user", "content": resultados})
+        mensajes = proveedor.continuar(mensajes, salida, resultados)
+
+        if salida.texto:
+            partes.append(salida.texto)
 
         # El estado pudo cambiar: `guardar_dato` escribio, y el bloque de
-        # contexto tiene que reflejarlo en la vuelta siguiente.
+        # contexto tiene que reflejarlo. Se reconstruye el mensaje de sistema.
         datos = await db.valor("SELECT datos FROM conversaciones WHERE id = $1", conversacion_id)
-
-        if texto:
-            partes.append(texto)
 
     logger.warning(
         "se agotaron las iteraciones de herramientas | conversacion=%s", conversacion_id

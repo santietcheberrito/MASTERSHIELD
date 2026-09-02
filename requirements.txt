@@ -1,6 +1,9 @@
 fastapi
 uvicorn[standard]
 anthropic
+# El cliente se quedo sin creditos de Anthropic a mitad del proyecto. El
+# proveedor se elige con PROVEEDOR_MODELO; volver a Claude no requiere codigo.
+openai
 httpx
 asyncpg
 pydantic

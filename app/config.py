@@ -16,6 +16,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # faltan para que no se descubra recien cuando falla una llamada.
 CREDENCIALES_OPCIONALES = (
     "anthropic_api_key",
+    "openai_api_key",
     "telegram_bot_token",
     "notion_token",
     "kommo_subdomain",
@@ -79,9 +80,15 @@ class Settings(BaseSettings):
     pais: str = "EC"
     prefijo_telefonico: str = "+593"
 
-    # Sonnet para el agente: la latencia importa en un chat y el razonamiento
-    # aca es acotado. Se cambia por entorno para comparar contra Opus.
-    modelo_agente: str = "claude-sonnet-5"
+    # El proyecto arranco con Anthropic. El cliente se quedo sin creditos a
+    # mitad de camino, asi que hoy corre sobre OpenAI. Volver a Claude es
+    # cambiar estas dos variables: el codigo no distingue. Ver
+    # app/agente/proveedor.py.
+    proveedor_modelo: str = "openai"
+    openai_api_key: str = ""
+    # gpt-5: 1.25 USD por millon de tokens de entrada contra 3 de Sonnet, y 90%
+    # de descuento sobre el prefijo cacheado, que es lo que este diseño explota.
+    modelo_agente: str = "gpt-5"
     max_iteraciones_herramientas: int = Field(default=6, gt=0, le=20)
 
     # Topes de uso. Pasado cualquiera de estos, el agente deja de contestar esa
@@ -175,6 +182,14 @@ class Settings(BaseSettings):
             raise ValueError("DEMORA_RESPUESTA_MIN_SEG no puede ser mayor que la maxima")
         return self
 
+    @field_validator("proveedor_modelo")
+    @classmethod
+    def _validar_proveedor(cls, valor: str) -> str:
+        proveedor = valor.lower()
+        if proveedor not in {"anthropic", "openai"}:
+            raise ValueError("PROVEEDOR_MODELO tiene que ser anthropic u openai")
+        return proveedor
+
     @field_validator("telegram_modo")
     @classmethod
     def _validar_telegram_modo(cls, valor: str) -> str:
@@ -198,6 +213,11 @@ class Settings(BaseSettings):
         except (ZoneInfoNotFoundError, ValueError) as e:
             raise ValueError(f"TZ invalida: {self.tz}") from e
         return self
+
+    @property
+    def clave_del_modelo(self) -> str:
+        return (self.openai_api_key if self.proveedor_modelo == "openai"
+                else self.anthropic_api_key)
 
     @property
     def zona(self) -> ZoneInfo:

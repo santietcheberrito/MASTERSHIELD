@@ -231,11 +231,11 @@ async def test_falta_un_argumento(pool_en_transaccion):
 
 def test_las_definiciones_salen_del_yaml():
     """Si alguien agrega un campo al YAML, el modelo lo ve sin tocar código."""
-    guardar = next(d for d in herramientas.definiciones() if d["name"] == "guardar_dato")
-    enum = guardar["input_schema"]["properties"]["campo"]["enum"]
+    guardar = next(d for d in herramientas.definiciones() if d["nombre"] == "guardar_dato")
+    enum = guardar["esquema"]["properties"]["campo"]["enum"]
     assert "metros_cuadrados" in enum
     assert "telefono" in enum
-    assert "modelo_vehiculo" in guardar["description"]
+    assert "modelo_vehiculo" in guardar["descripcion"]
 
 
 # --- el telefono sube a su columna ------------------------------------------

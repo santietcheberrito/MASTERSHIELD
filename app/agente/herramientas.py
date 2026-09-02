@@ -305,13 +305,13 @@ def definiciones() -> list[dict[str, Any]]:
 
     return [
         {
-            "name": "guardar_dato",
-            "description": (
+            "nombre": "guardar_dato",
+            "descripcion": (
                 "Guarda un dato del cliente apenas lo menciona, sin esperar al final "
                 "de la conversacion. Llamala cada vez que el cliente diga algo nuevo, "
                 "aunque sea de pasada.\n\nCampos:\n" + descripcion_campos
             ),
-            "input_schema": {
+            "esquema": {
                 "type": "object",
                 "properties": {
                     "campo": {"type": "string", "enum": sorted(campos)},
@@ -323,15 +323,15 @@ def definiciones() -> list[dict[str, Any]]:
             },
         },
         {
-            "name": "calcular_precio",
-            "description": (
+            "nombre": "calcular_precio",
+            "descripcion": (
                 "Calcula el precio del trabajo. Usala SIEMPRE que haya que dar un "
                 "numero: nunca hagas la cuenta vos. Tambien aplica el minimo de venta "
                 "y te dice si el pedido no llega.\n\n"
                 "Por defecto usa lo que ya esta guardado de la conversacion. Pasa "
                 "argumentos solo para responder un supuesto ('¿y si fueran 30 metros?')."
             ),
-            "input_schema": {
+            "esquema": {
                 "type": "object",
                 "properties": {
                     "metros_cuadrados": {
@@ -348,23 +348,23 @@ def definiciones() -> list[dict[str, Any]]:
             },
         },
         {
-            "name": "finalizar_calificacion",
-            "description": (
+            "nombre": "finalizar_calificacion",
+            "descripcion": (
                 "Cierra el relevamiento cuando ya tenes todo lo necesario para que un "
                 "asesor llame. Si falta algo, te lo dice y seguis preguntando. "
                 "No la llames antes de tener el telefono."
             ),
-            "input_schema": {"type": "object", "properties": {}, "required": []},
+            "esquema": {"type": "object", "properties": {}, "required": []},
         },
         {
-            "name": "escalar_a_humano",
-            "description": (
+            "nombre": "escalar_a_humano",
+            "descripcion": (
                 "Pasa la conversacion a una persona. Usala si el cliente lo pide, si "
                 "se enoja, si pregunta algo que no esta en tu informacion, o si la "
                 "consulta no es de venta (reclamo, garantia de un trabajo hecho, "
                 "facturacion)."
             ),
-            "input_schema": {
+            "esquema": {
                 "type": "object",
                 "properties": {
                     "motivo": {"type": "string", "description": "Por que se deriva, en una linea"},
