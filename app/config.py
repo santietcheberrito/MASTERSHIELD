@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     notion_token: str = ""
     notion_data_source_id: str = ""
 
+    # Adonde se cargan las conversaciones calificadas: notion, kommo, ambos o
+    # ninguno. "ambos" sirve mientras se valida la migracion a Kommo sin perder
+    # el tablero que el cliente ya conoce.
+    crm_destino: str = "ambos"
+
     # El cliente pidio que el agente no conteste al instante sino que espere
     # entre 1 y 2 minutos. Ese retraso ES la ventana del buffer: se sortea por
     # mensaje y corre `procesar_despues`, asi el agente no empieza a pensar
@@ -181,6 +186,14 @@ class Settings(BaseSettings):
         if self.demora_respuesta_min_seg > self.demora_respuesta_max_seg:
             raise ValueError("DEMORA_RESPUESTA_MIN_SEG no puede ser mayor que la maxima")
         return self
+
+    @field_validator("crm_destino")
+    @classmethod
+    def _validar_destino(cls, valor: str) -> str:
+        destino = valor.lower()
+        if destino not in {"notion", "kommo", "ambos", "ninguno"}:
+            raise ValueError("CRM_DESTINO tiene que ser notion, kommo, ambos o ninguno")
+        return destino
 
     @field_validator("proveedor_modelo")
     @classmethod

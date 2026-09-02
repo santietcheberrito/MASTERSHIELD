@@ -107,7 +107,7 @@ Ver [PENDIENTES.md](PENDIENTES.md) para lo que falta y qué bloquea cada cosa.
 | `app/canales/` (Telegram) | listo, con tests |
 | `app/canales/` (WhatsApp Cloud API) | falta: sin credenciales de Meta |
 | `app/crm/notion.py` | listo: CRM de prueba, automático |
-| `app/kommo/` | pendiente: sin acceso a la cuenta |
+| `app/kommo/` | listo, probado contra una cuenta real |
 | `app/agente/` | listo, probado contra el modelo real |
 | `app/precios.py` + `config/productos.yaml` | listo, con la lista real del cliente |
 | `prompts/` | provisorio: falta la revisión de MasterShield |

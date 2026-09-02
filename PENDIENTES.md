@@ -186,6 +186,19 @@ aplicar el retraso siempre, sin excepción. Queda anotado para poder revisarlo
 con datos después de las 20 conversaciones de prueba: si hay abandono en el
 primer mensaje, este es el primer parámetro a mirar.
 
+## Kommo
+
+- [x] Cliente HTTP, sincronización, campos, etapas, nota y tarea. Probado
+  contra la cuenta real de prueba.
+- [ ] **La tarea de llamado no puede quedar sin responsable.** Kommo exige un
+  usuario responsable en toda tarea; hoy queda a nombre del dueño del token.
+  `CLAUDE.md` pedía que no tuviera responsable para que los 3 vendedores la
+  vieran y se la quedara el primero. Hay que definir con MasterShield a quién
+  se asignan, o si prefieren verlas por otro mecanismo.
+- [ ] **La cuenta de prueba es de Kommo, no de MasterShield.** Cuando den
+  acceso a la suya hay que correr `mapear_kommo.py` y `preparar_kommo.py` de
+  nuevo: los IDs del YAML son de esta cuenta y no sirven en otra.
+
 ## Decisiones a confirmar con el cliente
 
 - [ ] A quién y por qué medio se notifica un `escalar_a_humano`.

@@ -1,0 +1,153 @@
+"""Traduce el documento del lead a Kommo y lo carga.
+
+El documento no sabe de ningun CRM: dice que contacto, que lead, que nota y que
+tarea corresponden a una conversacion. Aca se convierte a los IDs numericos de
+la cuenta, que salen de `config/kommo.yaml` y nunca se escriben a mano.
+
+Es idempotente: si la conversacion ya tiene un lead, se actualiza en vez de
+crear otro. Y el contacto se busca por telefono antes de crearlo, que es lo que
+evita terminar con un contacto por conversacion de la misma persona.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+from datetime import datetime, time
+from typing import Any
+
+from app.config import obtener_settings
+from app.crm.documento import Documento
+from app.kommo.cliente import Kommo, KommoNoConfigurado, configuracion
+
+logger = logging.getLogger(__name__)
+
+__all__ = ["sincronizar", "KommoNoConfigurado"]
+
+# Que campo del lead recibe cada dato del documento.
+CAMPOS = {
+    "score": "score",
+    "clasificacion": "clasificacion",
+    "zona": "zona",
+    "linea": "linea",
+    "producto": "producto",
+    "metros_cuadrados": "metros_cuadrados",
+    "presupuesto": "presupuesto",
+    "garantia": "garantia",
+    "aplicacion": "aplicacion",
+    "urgencia": "urgencia",
+    "tipo_cliente": "tipo_cliente",
+    "disponibilidad": "disponibilidad",
+    "modelo_vehiculo": "modelo_vehiculo",
+    "medidas_detalle": "medidas_detalle",
+    "canal": "canal",
+}
+
+# La clasificacion del scoring, con la primera en mayuscula, como esta cargada
+# en el campo de seleccion de Kommo.
+CLASIFICACIONES = {
+    "alta": "Alta", "media": "Media", "baja": "Baja", "descartada": "Descartada",
+}
+
+
+def _valores_personalizados(documento: Documento) -> list[dict[str, Any]]:
+    ids = configuracion()["campos_lead"]
+    valores = []
+    for clave_documento, clave_config in CAMPOS.items():
+        id_campo = ids.get(clave_config)
+        dato = documento.lead.get(clave_documento)
+        if clave_documento == "clasificacion":
+            dato = CLASIFICACIONES.get(dato)
+        if id_campo is None or dato in (None, ""):
+            continue
+        valores.append({"field_id": id_campo, "values": [{"value": dato}]})
+    return valores
+
+
+def _vencimiento(documento: Documento) -> int:
+    """La tarea vence al final del dia de llamado, en hora de Ecuador."""
+    settings = obtener_settings()
+    fecha = documento.tarea["vence"]
+    _, fin = settings.horario
+    momento = datetime.combine(fecha, fin or time(18, 0), tzinfo=settings.zona)
+    return int(momento.timestamp())
+
+
+def _cuerpo_del_lead(documento: Documento, id_contacto: int | None) -> dict[str, Any]:
+    config = configuracion()
+    etapa = config["etapas"].get(documento.lead["etapa"])
+
+    cuerpo: dict[str, Any] = {
+        "name": f"{documento.lead['nombre']} — {documento.lead.get('producto') or 'consulta'}",
+        "pipeline_id": config["embudo"]["id"],
+        "custom_fields_values": _valores_personalizados(documento),
+    }
+    if etapa:
+        cuerpo["status_id"] = etapa
+    if documento.lead.get("presupuesto"):
+        # El monto del lead, que es lo que Kommo suma en los reportes.
+        cuerpo["price"] = int(documento.lead["presupuesto"])
+    if id_contacto:
+        cuerpo["_embedded"] = {"contacts": [{"id": id_contacto}]}
+    return cuerpo
+
+
+async def sincronizar(documento: Documento, referencia: dict | None = None) -> dict:
+    """Carga la conversacion en Kommo. Devuelve la referencia para guardarla.
+
+    `referencia` es lo que devolvio una sincronizacion anterior de esta misma
+    conversacion, si la hubo.
+    """
+    kommo = Kommo()
+    referencia = referencia or {}
+    telefono = documento.contacto.get("telefono")
+
+    # --- contacto -----------------------------------------------------------
+    id_contacto = referencia.get("contacto")
+    if not id_contacto and telefono:
+        id_contacto = await kommo.buscar_contacto(telefono)
+        if id_contacto:
+            logger.info("contacto existente reutilizado | kommo_contacto=%s", id_contacto)
+    if not id_contacto:
+        id_contacto = await kommo.crear_contacto(documento.contacto["nombre"], telefono)
+        logger.info("contacto creado | kommo_contacto=%s", id_contacto)
+
+    # --- lead ---------------------------------------------------------------
+    cuerpo = _cuerpo_del_lead(documento, id_contacto)
+    id_lead = referencia.get("lead")
+
+    if id_lead:
+        # En un PATCH no se reasignan los contactos ni cambia el nombre.
+        cuerpo.pop("_embedded", None)
+        cuerpo.pop("name", None)
+        await kommo.actualizar_lead(id_lead, cuerpo)
+        logger.info("lead actualizado | kommo_lead=%s", id_lead)
+    else:
+        id_lead = await kommo.crear_lead(cuerpo)
+        logger.info("lead creado | kommo_lead=%s etapa=%s",
+                    id_lead, documento.lead["etapa"])
+
+    # --- nota ---------------------------------------------------------------
+    # Las notas son el historial de lo que fue pasando, no un campo que se
+    # pisa: cada vez que la conversacion avanza se agrega una. Pero repetir la
+    # misma no aporta nada, y una sincronizacion se puede repetir por un
+    # reintento. Se guarda una huella de la ultima y se saltea si no cambio.
+    huella = hashlib.sha256(documento.nota.encode("utf-8")).hexdigest()[:16]
+    if huella != referencia.get("huella_nota"):
+        await kommo.agregar_nota(id_lead, documento.nota)
+    else:
+        logger.info("la nota no cambio, no se duplica | kommo_lead=%s", id_lead)
+
+    # --- tarea de llamado ---------------------------------------------------
+    # Solo para lo que un asesor tiene que llamar. Un descarte o una consulta a
+    # medias no genera tarea: llenar la lista de tareas de cosas que nadie va a
+    # hacer es la forma mas rapida de que dejen de mirarla.
+    id_tarea = referencia.get("tarea")
+    if not id_tarea and documento.puntaje.clasificacion in ("alta", "media", "baja"):
+        id_tarea = await kommo.crear_tarea(
+            id_lead, documento.tarea["texto"], _vencimiento(documento)
+        )
+        logger.info("tarea de llamado creada | kommo_tarea=%s", id_tarea)
+
+    return {"destino": "kommo", "contacto": id_contacto, "lead": id_lead,
+            "tarea": id_tarea, "huella_nota": huella}

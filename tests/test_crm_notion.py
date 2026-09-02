@@ -12,7 +12,18 @@ import pytest
 from app import scoring
 from app.crm import documento, notion, sincronizacion
 
-pytestmark = [pytest.mark.db, pytest.mark.usefixtures("settings_de_prueba")]
+pytestmark = [pytest.mark.db,
+              pytest.mark.usefixtures("settings_de_prueba", "destino_notion")]
+
+
+@pytest.fixture
+def destino_notion(monkeypatch):
+    from app.config import obtener_settings
+
+    monkeypatch.setenv("CRM_DESTINO", "notion")
+    obtener_settings.cache_clear()
+    yield
+    obtener_settings.cache_clear()
 
 COMPLETO = {
     "linea": "arquitectonico", "objetivo": "control_solar", "zona": "quito_y_valles",
@@ -136,7 +147,7 @@ async def test_cuando_sale_bien_deja_la_referencia(pool_en_transaccion, monkeypa
     )
     assert fila["crm_pendiente"] is False
     assert fila["crm_sincronizada_en"] is not None
-    assert fila["crm_referencia"]["pagina"] == "pagina-123"
+    assert fila["crm_referencia"]["notion"]["pagina"] == "pagina-123"
 
 
 async def test_finalizar_no_falla_aunque_el_crm_este_caido(pool_en_transaccion, monkeypatch):

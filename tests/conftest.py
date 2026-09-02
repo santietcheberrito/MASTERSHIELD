@@ -26,6 +26,7 @@ VARIABLES = (
     "PREFIJO_TELEFONICO",
     "TELEGRAM_MODO",
     "NOTION_DATA_SOURCE_ID",
+    "CRM_DESTINO",
     "MODELO_AGENTE",
     "PROVEEDOR_MODELO",
     "MAX_ITERACIONES_HERRAMIENTAS",
@@ -206,6 +207,9 @@ def settings_de_prueba(monkeypatch):
     por dentro explota con eso. Los que lo necesitan piden esta fixture.
     """
     monkeypatch.setenv("DATABASE_URL", "postgresql://usuario:clave@host:5432/base")
+    # Ningun destino por defecto: un test no puede escribir sin querer en el
+    # CRM real. El que pruebe un destino lo pide explicitamente.
+    monkeypatch.setenv("CRM_DESTINO", "ninguno")
     obtener_settings.cache_clear()
     yield
     obtener_settings.cache_clear()
