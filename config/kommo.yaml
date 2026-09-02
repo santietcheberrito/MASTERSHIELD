@@ -1,0 +1,56 @@
+# Estructura de la cuenta de Kommo.
+#
+# Los IDs los descubre `scripts/mapear_kommo.py`, que solo lee. Nunca se
+# escriben a mano ni se inventan: son distintos en cada cuenta, y cuando
+# MasterShield de acceso a la suya hay que volver a correr el script y
+# reemplazar este archivo entero. El codigo no cambia.
+#
+# Cuenta de prueba: santietcheberrito (id 36922735).
+# OJO: esa cuenta esta configurada en pais AR y moneda ARS, mientras que los
+# precios de MasterShield son USD. Para probar la integracion no importa, pero
+# el monto del lead se va a ver en pesos hasta que se use la cuenta real.
+
+cuenta:
+  id: 36922735
+  subdominio: santietcheberrito
+embudo:
+  id: 14392963
+  nombre: Embudo de ventas
+etapas_existentes:
+  leads_entrantes: 111170163
+  contacto_inicial: 111170167
+  negociacion: 111170171
+  debate_contractual: 111170175
+  discusion_de_contrato: 111170179
+  logrado_con_exito: 142
+  venta_perdido: 143
+etapas:
+  Conversando: 111170163
+  Calificado alto: 111178975
+  Calificado medio: 111178979
+  Calificado bajo: 111178983
+  No llega al mínimo: 111178987
+  Fuera de Ecuador: 143
+  Derivado a un asesor: 111178991
+campos_lead:
+  score: 424238
+  clasificacion: 424240
+  zona: 424242
+  linea: 424244
+  producto: 424246
+  metros_cuadrados: 424248
+  presupuesto: 424250
+  garantia: 424252
+  aplicacion: 424254
+  urgencia: 424256
+  tipo_cliente: 424258
+  disponibilidad: 424260
+  modelo_vehiculo: 424262
+  medidas_detalle: 424264
+  canal: 424266
+campos_contacto:
+  telefono: 420186
+  telefono_tipo: 342936
+  email: 420188
+usuarios:
+  santiago: 15800371

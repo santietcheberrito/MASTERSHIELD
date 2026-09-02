@@ -128,6 +128,32 @@ class Settings(BaseSettings):
             raise ValueError("HORARIO_ATENCION: la hora de inicio tiene que ser menor a la de fin")
         return valor
 
+    @field_validator("kommo_subdomain")
+    @classmethod
+    def _validar_subdominio(cls, valor: str) -> str:
+        """Acepta el subdominio suelto o la URL entera copiada del navegador.
+
+        Lo que hay que poner es `miempresa`, pero lo natural es copiar
+        `https://miempresa.kommo.com/home/` de la barra de direcciones. Antes
+        que fallar con un 404 confuso a la hora de llamar a la API, se limpia
+        aca.
+        """
+        if not valor:
+            return valor
+        limpio = valor.strip().rstrip("/")
+        for prefijo in ("https://", "http://"):
+            if limpio.startswith(prefijo):
+                limpio = limpio[len(prefijo):]
+        limpio = limpio.split("/")[0]
+        if limpio.endswith(".kommo.com"):
+            limpio = limpio[: -len(".kommo.com")]
+        if "." in limpio or not limpio:
+            raise ValueError(
+                "KOMMO_SUBDOMAIN tiene que ser el subdominio solo, por ejemplo "
+                "'miempresa' de https://miempresa.kommo.com"
+            )
+        return limpio
+
     @field_validator("pais")
     @classmethod
     def _validar_pais(cls, valor: str) -> str:
