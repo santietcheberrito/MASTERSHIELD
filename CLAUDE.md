@@ -429,6 +429,8 @@ TZ=America/Guayaquil
 PAIS=EC
 PREFIJO_TELEFONICO=+593
 LOG_LEVEL=INFO
+LOG_FORMATO=texto
+PAUSA_POR_HUMANO_HORAS=6
 ```
 
 Nunca commitear `.env`. Mantener `.env.example` actualizado.
@@ -466,6 +468,34 @@ scripts/
   cargar_catalogo.py
   simular_conversacion.py
 ```
+
+---
+
+## Observabilidad
+
+**Logging estructurado.** `app/registro.py` engancha structlog como formateador
+del logging estándar, así que los módulos siguen usando
+`logging.getLogger(__name__)` y también salen estructurados los logs de httpx,
+uvicorn y asyncpg. `LOG_FORMATO=json` en producción, `texto` en la terminal.
+
+Lo que importa no es el formato sino el contexto: `registro.con_conversacion`
+mete el id en un contextvar y desde ahí **todas** las líneas del turno lo llevan
+solas —el worker, el loop, las herramientas, la sincronización con el CRM—. Es
+lo que permite reconstruir un turno entero en vez de buscar por hora.
+
+**Métricas.** `GET /metricas` responde el estado del sistema ahora, no lo que
+pasó. Devuelve 200 siempre, incluso con alertas: un 503 haría que el healthcheck
+de Railway reiniciara el proceso, y un lead que no llegó al CRM no se arregla
+reiniciando.
+
+La métrica que justifica el resto es `crm.agotadas`: conversaciones que
+agotaron los reintentos y ya no se reintentan solas. Cada una es un lead que no
+está en Kommo. Las otras cuatro son conversaciones por estado, turnos trabados,
+la actividad del día y los eventos por tipo.
+
+`alertas` traduce los números a castellano. Un tablero de números crudos obliga
+a saber cuál está mal, y eso lo sabe quien escribió el sistema, no quien lo mira
+un martes a la mañana.
 
 ---
 

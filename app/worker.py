@@ -17,7 +17,7 @@ from datetime import datetime
 
 import asyncpg
 
-from app import db, humanizacion, limites
+from app import db, humanizacion, limites, registro
 from app.agente import herramientas, loop
 from app.canales import telegram, whatsapp
 from app.config import obtener_settings
@@ -362,6 +362,15 @@ class Worker:
         return len(tomadas)
 
     async def _procesar_una(
+        self, conversacion_id: int, procesar_despues: datetime, intentos: int
+    ) -> None:
+        # Desde aca hasta que termine el turno, todo lo que se loguee —el loop,
+        # las herramientas, la sincronizacion con el CRM, httpx— lleva el id
+        # solo. Es lo que permite reconstruir un turno entero despues.
+        with registro.con_conversacion(conversacion_id, intento=intentos):
+            await self._turno(conversacion_id, procesar_despues, intentos)
+
+    async def _turno(
         self, conversacion_id: int, procesar_despues: datetime, intentos: int
     ) -> None:
         try:

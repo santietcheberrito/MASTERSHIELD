@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from app import db, webhook
+from app import db, metricas, registro, webhook
 from app.config import Settings, obtener_settings
 from app.poller import Poller
 from app.crm.reintentos import Reintentos
@@ -23,11 +23,8 @@ from app.worker import Worker
 logger = logging.getLogger(__name__)
 
 
-def configurar_logging(nivel: str) -> None:
-    logging.basicConfig(
-        level=getattr(logging, nivel),
-        format="%(asctime)s %(levelname)-8s %(name)s %(message)s",
-    )
+def configurar_logging(nivel: str, formato: str = "texto") -> None:
+    registro.configurar(nivel, formato)
 
 
 def avisar_credenciales(settings: Settings) -> None:
@@ -52,7 +49,7 @@ def avisar_credenciales(settings: Settings) -> None:
 @asynccontextmanager
 async def ciclo_de_vida(app: FastAPI):
     settings = obtener_settings()
-    configurar_logging(settings.log_level)
+    configurar_logging(settings.log_level, settings.log_formato)
     avisar_credenciales(settings)
 
     base_lista = False
@@ -117,3 +114,14 @@ async def health() -> JSONResponse:
         "base": "ok" if base_viva else "sin conexion",
     }
     return JSONResponse(cuerpo, status_code=200 if base_viva else 503)
+
+
+@app.get("/metricas")
+async def ver_metricas() -> JSONResponse:
+    """El estado del sistema ahora. Devuelve 200 siempre, incluso con alertas.
+
+    Un 503 aca haria que el healthcheck de Railway reiniciara el proceso, y un
+    lead que no llego al CRM no se arregla reiniciando: se arregla mirandolo.
+    """
+    settings = obtener_settings()
+    return JSONResponse(await metricas.reunir(zona=str(settings.zona)))

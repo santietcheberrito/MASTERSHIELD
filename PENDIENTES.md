@@ -231,8 +231,14 @@ primer mensaje, este es el primer parámetro a mirar.
 - [ ] **La demora está en 12–18 segundos, no en 60–120.** Bajada para poder
   testear. Antes de producción vuelve a `DEMORA_RESPUESTA_MIN_SEG=60` y
   `MAX=120`, que es lo que pidió el cliente.
-- [ ] **Falta el deploy en Railway**, el logging estructurado con structlog y
-  el endpoint `/metricas`.
+- [x] **Logging estructurado y métricas.** `app/registro.py` con structlog y
+  `conversacion_id` atado a todo el turno; `GET /metricas` con las alertas en
+  castellano. Los agotados del CRM ya son visibles.
+- [ ] **Falta el deploy en Railway.** Al desplegar hay que poner
+  `LOG_FORMATO=json` y apuntar el healthcheck a `/health`, no a `/metricas`.
+- [ ] **Falta que alguien mire `/metricas`.** El endpoint existe; lo que no hay
+  es un chequeo periódico que avise. Puede ser tan simple como un cron que pegue
+  una vez por día y mande las alertas al mismo destino que las derivaciones.
 
 ## Módulos que se pueden avanzar sin nada de lo anterior
 

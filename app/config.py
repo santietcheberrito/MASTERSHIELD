@@ -119,6 +119,11 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    # "json" para produccion, "texto" para la terminal. En Railway los logs se
+    # consultan, no se leen: una linea de JSON por evento es lo que permite
+    # preguntar "que paso con la conversacion 4017" en vez de buscar a ojo.
+    log_formato: str = "texto"
+
     @field_validator("database_url")
     @classmethod
     def _validar_database_url(cls, valor: str) -> str:
@@ -222,6 +227,14 @@ class Settings(BaseSettings):
         if modo not in {"polling", "webhook", "off"}:
             raise ValueError("TELEGRAM_MODO tiene que ser polling, webhook u off")
         return modo
+
+    @field_validator("log_formato")
+    @classmethod
+    def _validar_log_formato(cls, valor: str) -> str:
+        valor = valor.strip().lower()
+        if valor not in ("json", "texto"):
+            raise ValueError(f"LOG_FORMATO invalido: {valor!r}. Use 'json' o 'texto'.")
+        return valor
 
     @field_validator("log_level")
     @classmethod
