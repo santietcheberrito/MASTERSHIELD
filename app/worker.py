@@ -19,7 +19,7 @@ import asyncpg
 
 from app import db, humanizacion, limites
 from app.agente import herramientas, loop
-from app.canales import telegram
+from app.canales import telegram, whatsapp
 from app.config import obtener_settings
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ _TOMAR = """
 """
 
 _MENSAJES_DEL_TURNO = """
-    SELECT id, tipo, contenido
+    SELECT id, tipo, contenido, id_externo
     FROM mensajes
     WHERE conversacion_id = $1 AND NOT procesado AND rol = 'cliente'
     ORDER BY id
@@ -105,6 +105,8 @@ class Turno:
     texto: str
     canal: str = ""
     identificador: str = ""
+    # El ultimo mensaje del cliente, que WhatsApp necesita para el indicador.
+    ultimo_id_externo: str = ""
 
     @property
     def ultimo_id(self) -> int:
@@ -147,6 +149,7 @@ def armar_turno(conversacion_id: int, filas: list[asyncpg.Record]) -> Turno | No
         conversacion_id=conversacion_id,
         ids_mensajes=[f["id"] for f in filas],
         texto="\n".join(partes),
+        ultimo_id_externo=filas[-1]["id_externo"] or "",
     )
 
 
@@ -254,13 +257,21 @@ async def _mostrar_escribiendo(turno: Turno, segundos: float) -> None:
     settings = obtener_settings()
     restante = segundos
     while restante > 0:
-        if turno.canal == "telegram" and settings.telegram_bot_token:
-            try:
+        try:
+            if turno.canal == "telegram" and settings.telegram_bot_token:
                 await telegram.indicar_escribiendo(
                     settings.telegram_bot_token, turno.identificador
                 )
-            except Exception:
-                logger.debug("no se pudo mostrar el indicador de escribiendo")
+            elif (turno.canal == "whatsapp" and settings.whatsapp_token
+                  and turno.ultimo_id_externo):
+                # En Meta el indicador va pegado a marcar como leido, y necesita
+                # el id del mensaje entrante al que se responde.
+                await whatsapp.indicar_escribiendo(
+                    settings.whatsapp_token, settings.whatsapp_phone_number_id,
+                    turno.ultimo_id_externo,
+                )
+        except Exception:
+            logger.debug("no se pudo mostrar el indicador de escribiendo")
         tramo = min(4.0, restante)
         await asyncio.sleep(tramo)
         restante -= tramo
@@ -275,6 +286,14 @@ async def _enviar(turno: Turno, texto: str) -> str | None:
             return None
         return await telegram.enviar(
             settings.telegram_bot_token, turno.identificador, texto
+        )
+    if turno.canal == "whatsapp":
+        if not settings.whatsapp_token or not settings.whatsapp_phone_number_id:
+            logger.error("sin credenciales de WhatsApp: no se puede responder")
+            return None
+        return await whatsapp.enviar(
+            settings.whatsapp_token, settings.whatsapp_phone_number_id,
+            turno.identificador, texto,
         )
     logger.error("canal sin implementar: %s", turno.canal)
     return None

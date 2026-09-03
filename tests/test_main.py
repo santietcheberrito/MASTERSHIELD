@@ -87,5 +87,5 @@ def test_avisar_credenciales_lista_las_que_faltan(caplog):
     with caplog.at_level("WARNING"):
         main.avisar_credenciales(settings)
 
-    assert "BSP_TOKEN" in caplog.text
+    assert "WHATSAPP_TOKEN" in caplog.text
     assert "ANTHROPIC_API_KEY" not in caplog.text

@@ -33,6 +33,25 @@ async def sincronizar(conversacion_id: int) -> bool:
         await _registrar_error(conversacion_id, "no se pudo armar el documento")
         return False
 
+    # El puntaje es nuestro, no del CRM: se guarda antes de salir a la red, asi
+    # queda registrado aunque Kommo este caido. Las columnas existian desde la
+    # primera migracion y hasta ahora ninguna se escribia: el tablero mostraba
+    # el score y la base lo tenia en NULL.
+    await db.ejecutar(
+        """
+        UPDATE conversaciones SET
+            score         = $2,
+            clasificacion = $3,
+            detalle_score = $4::jsonb
+        WHERE id = $1
+        """,
+        conversacion_id,
+        doc.puntaje.score,
+        doc.puntaje.clasificacion,
+        {"etapa": doc.puntaje.etapa, "motivo": doc.puntaje.motivo,
+         "desglose": doc.puntaje.desglose},
+    )
+
     destinos = _destinos()
     if not destinos:
         logger.info("CRM_DESTINO=ninguno: no se sincroniza | conversacion=%s", conversacion_id)

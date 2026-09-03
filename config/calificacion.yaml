@@ -73,9 +73,14 @@ campos:
 # Campos sin los cuales la calificacion no sirve, segun la linea. El handoff es
 # telefonico: sin telefono no hay a quien llamar, por mas completo que este el
 # resto.
+# `disponibilidad` es requerida por una razon operativa, no de puntaje: sin ella
+# el agente cerraba, sincronizaba, y despues el cliente contestaba el horario y
+# volvia a cerrar. El lead entraba al tablero con un puntaje y a los sesenta
+# segundos con otro, dejando dos notas. Pedirla antes de cerrar hace que el
+# cierre ocurra una sola vez.
 requeridos_por_linea:
-  arquitectonico: [linea, zona, objetivo, metros_cuadrados, telefono]
-  vehicular: [linea, zona, modelo_vehiculo, telefono]
+  arquitectonico: [linea, zona, objetivo, metros_cuadrados, telefono, disponibilidad]
+  vehicular: [linea, zona, modelo_vehiculo, telefono, disponibilidad]
 
 # ---------------------------------------------------------------------------
 # Puntaje

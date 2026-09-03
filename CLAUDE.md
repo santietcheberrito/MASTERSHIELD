@@ -195,8 +195,8 @@ marcada como provisoria.
 | `garantia` | 10 años · 5 años | Cambia el precio, solo solar y privacidad |
 | `modelo_vehiculo` | texto | Solo vehicular: define el tipo y el material |
 | `nivel_seguridad` | texto | Solo vehicular |
-| `disponibilidad` | qué día o franja le queda cómoda | Lo que el vendedor necesita para llamar |
-| `telefono` | E.164 | En Telegram no viene en el payload: hay que pedirlo |
+| `disponibilidad` | qué día y hora le quedan cómodos | Lo que el vendedor necesita para llamar. **Lo elige el cliente** |
+| `telefono` | E.164 | En WhatsApp viene en el payload y se confirma; en Telegram hay que pedirlo |
 | `tipo_cliente` | particular · empresa · constructora o arquitecto | A confirmar |
 | `urgencia` | inmediato · semanas · explorando | A confirmar |
 
@@ -208,8 +208,22 @@ se vende: control solar, privacidad o seguridad.
 ciudad con 15 m² no es cliente, y eso pesa más que cualquier otro campo.
 
 `medidas` sigue siendo crítico: sin fotos ni referencia de metros no hay
-cotización ni visita. `telefono` es igual de crítico en Telegram, porque el
-handoff es telefónico y sin número no hay a quién llamar.
+cotización ni visita.
+
+**`telefono` no se pregunta en WhatsApp: se confirma.** El número del remitente
+viene en cada mensaje, así que la ingesta lo siembra en `datos` al crear la
+conversación y el agente solo ofrece la alternativa —"¿lo llamamos a este mismo
+número o prefiere dejar otra línea?"—. Pedirle a alguien que tipee el número
+desde el que está escribiendo es de formulario. En Telegram no viene en el
+payload y ahí sí hay que pedirlo. Si el cliente da otro, `guardar_dato` pisa al
+del canal y gana el relevado.
+
+**`disponibilidad` es requisito para cerrar, y la pone el cliente.** El agente
+no propone un horario ni completa el silencio con "lo llamamos hoy a la tarde":
+pregunta y espera. Es requisito por una razón operativa además de comercial —
+sin él el agente cerraba, sincronizaba, y volvía a cerrar cuando el cliente
+contestaba el horario, dejando el lead con dos notas en Kommo y un paso por la
+etapa equivocada.
 
 ---
 

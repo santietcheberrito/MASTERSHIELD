@@ -21,9 +21,9 @@ CREDENCIALES_OPCIONALES = (
     "notion_token",
     "kommo_subdomain",
     "kommo_access_token",
-    "bsp_api_url",
-    "bsp_token",
-    "bsp_webhook_secret",
+    "whatsapp_phone_number_id",
+    "whatsapp_token",
+    "whatsapp_app_secret",
 )
 
 _HORARIO = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-3]):([0-5]\d)$")
@@ -45,9 +45,15 @@ class Settings(BaseSettings):
     kommo_subdomain: str = ""
     kommo_access_token: str = ""
 
-    bsp_api_url: str = ""
-    bsp_token: str = ""
-    bsp_webhook_secret: str = ""
+    # WhatsApp Cloud API, Meta directo. Se descarto pasar por un BSP: el alta
+    # es mas engorrosa pero no hay intermediario ni costo de plataforma.
+    whatsapp_phone_number_id: str = ""
+    whatsapp_token: str = ""
+    # Para validar X-Hub-Signature-256: es la unica forma de saber que el
+    # mensaje vino de Meta y no de cualquiera que descubrio la URL.
+    whatsapp_app_secret: str = ""
+    # Lo elige uno; Meta lo devuelve al dar de alta el webhook.
+    whatsapp_verify_token: str = ""
 
     # Telegram es el canal de la etapa de pruebas, antes de conectar la Cloud
     # API de WhatsApp.

@@ -39,12 +39,23 @@ ESTADOS_QUE_SE_REABREN = ("cerrada", "calificada")
 # guarda dos veces ni corre la ventana del debounce, que es lo que importa.
 _REGISTRAR = """
 WITH conv AS (
-    INSERT INTO conversaciones (canal, identificador, nombre, telefono, ultimo_mensaje_en)
-    VALUES ($1, $2, $3, $4, now())
+    -- El telefono del canal siembra `datos` en el primer mensaje: en WhatsApp
+    -- ya sabemos a que numero escribe la persona, y preguntarselo es hacerle
+    -- tipear algo que tenemos delante. El agente lo confirma, no lo releva.
+    -- Solo en el INSERT: despues manda `guardar_dato`.
+    INSERT INTO conversaciones (canal, identificador, nombre, telefono, datos, ultimo_mensaje_en)
+    VALUES ($1, $2, $3, $4,
+            CASE WHEN $4::text IS NULL THEN '{}'::jsonb
+                 ELSE jsonb_build_object('telefono', $4::text) END,
+            now())
     ON CONFLICT (canal, identificador) DO UPDATE SET
         -- Un dato que ya teniamos no se pisa con un NULL del mensaje nuevo.
         nombre            = COALESCE(EXCLUDED.nombre, conversaciones.nombre),
-        telefono          = COALESCE(EXCLUDED.telefono, conversaciones.telefono),
+        -- El telefono del canal es solo el valor inicial. En WhatsApp viene en
+        -- cada mensaje, y si pisara al guardado, el numero que el cliente pidio
+        -- que le llamen —una oficina, un fijo— se perderia en el mensaje
+        -- siguiente. Gana el que ya esta: `guardar_dato` es quien lo cambia.
+        telefono          = COALESCE(conversaciones.telefono, EXCLUDED.telefono),
         ultimo_mensaje_en = now(),
         estado            = CASE
                                 WHEN conversaciones.estado = ANY($5::text[]) THEN 'activa'

@@ -209,6 +209,18 @@ primer mensaje, este es el primer parámetro a mirar.
   lunes a viernes, que es un default, no un dato del cliente.
 - [ ] Manejo del riesgo de rotura térmica (ver CLAUDE.md).
 
+## Deuda del código, sin bloqueos externos
+
+- [ ] **El reintento del CRM no existe.** `crm_pendiente` y `crm_reintentar_en`
+  se escriben cuando una sincronización falla, pero no hay ningún loop que los
+  lea. Una conversación que falla queda marcada para siempre. Es una promesa
+  del `CLAUDE.md` que hoy no se cumple.
+- [ ] **La demora está en 12–18 segundos, no en 60–120.** Bajada para poder
+  testear. Antes de producción vuelve a `DEMORA_RESPUESTA_MIN_SEG=60` y
+  `MAX=120`, que es lo que pidió el cliente.
+- [ ] **Falta el deploy en Railway**, el logging estructurado con structlog y
+  el endpoint `/metricas`.
+
 ## Módulos que se pueden avanzar sin nada de lo anterior
 
 - `whatsapp/humanizacion.py` — partido de mensajes y cálculo de delays.

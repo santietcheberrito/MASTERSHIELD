@@ -19,8 +19,11 @@ def mensaje(n: int, chat: str = "7", texto: str | None = None, tipo: str = "text
 
 # --- armado del turno, sin base --------------------------------------------
 
-def registro(id_, tipo, contenido):
-    return {"id": id_, "tipo": tipo, "contenido": contenido}
+def registro(id_, tipo, contenido, id_externo=None):
+    # `id_externo` lo necesita WhatsApp: el indicador de "escribiendo" va
+    # pegado a marcar como leido un mensaje entrante concreto.
+    return {"id": id_, "tipo": tipo, "contenido": contenido,
+            "id_externo": id_externo or f"telegram:7:{id_}"}
 
 
 def test_la_rafaga_se_junta_en_un_solo_texto():
@@ -35,6 +38,7 @@ def test_la_rafaga_se_junta_en_un_solo_texto():
     assert turno.texto == "buenas\nnecesito lamina\npara una oficina en Cumbaya"
     assert turno.ids_mensajes == [1, 2, 3]
     assert turno.ultimo_id == 3
+    assert turno.ultimo_id_externo == "telegram:7:3"
 
 
 def test_los_adjuntos_se_anotan_en_el_turno():

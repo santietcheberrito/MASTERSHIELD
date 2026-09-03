@@ -138,3 +138,95 @@ def test_con_secreto_incorrecto_se_rechaza(cliente_con_secreto, registrados):
     )
     assert respuesta.status_code == 403
     assert registrados == []
+
+
+# --- WhatsApp ---------------------------------------------------------------
+
+RUTA_WA = "/webhook/whatsapp"
+
+PAYLOAD_WA = {
+    "object": "whatsapp_business_account",
+    "entry": [{"id": "WABA", "changes": [{"field": "messages", "value": {
+        "messaging_product": "whatsapp",
+        "contacts": [{"profile": {"name": "María Páez"}, "wa_id": "593987112233"}],
+        "messages": [{"id": "wamid.ABC", "from": "593987112233", "type": "text",
+                      "text": {"body": "buenas, necesito lamina"}}],
+    }}]}],
+}
+
+
+@pytest.fixture
+def cliente_wa(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", URL)
+    monkeypatch.setenv("TELEGRAM_MODO", "off")
+    monkeypatch.setenv("WHATSAPP_VERIFY_TOKEN", "mi-verify-token")
+    monkeypatch.setenv("WHATSAPP_APP_SECRET", "secreto")
+    obtener_settings.cache_clear()
+
+    async def _nada(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(db, "iniciar", _nada)
+    monkeypatch.setattr(db, "cerrar", _nada)
+    monkeypatch.setattr(main, "Worker", _WorkerFalso)
+
+    with TestClient(main.app) as c:
+        yield c
+
+    obtener_settings.cache_clear()
+
+
+def _firmar(cuerpo: bytes, secreto: str = "secreto") -> dict:
+    import hashlib
+    import hmac
+    return {"X-Hub-Signature-256":
+            "sha256=" + hmac.new(secreto.encode(), cuerpo, hashlib.sha256).hexdigest()}
+
+
+def test_meta_verifica_la_url_con_un_desafio(cliente_wa):
+    """Es el alta del webhook: Meta manda un GET y espera el challenge de vuelta."""
+    respuesta = cliente_wa.get(RUTA_WA, params={
+        "hub.mode": "subscribe", "hub.verify_token": "mi-verify-token",
+        "hub.challenge": "1234567890"})
+    assert respuesta.status_code == 200
+    assert respuesta.text == "1234567890"
+
+
+def test_un_verify_token_que_no_coincide_se_rechaza(cliente_wa):
+    respuesta = cliente_wa.get(RUTA_WA, params={
+        "hub.mode": "subscribe", "hub.verify_token": "otro", "hub.challenge": "1"})
+    assert respuesta.status_code == 403
+
+
+def test_un_mensaje_firmado_se_registra(cliente_wa, registrados):
+    import json as _json
+    cuerpo = _json.dumps(PAYLOAD_WA).encode()
+    respuesta = cliente_wa.post(RUTA_WA, content=cuerpo, headers=_firmar(cuerpo))
+
+    assert respuesta.status_code == 200
+    assert len(registrados) == 1
+    mensaje, _demora = registrados[0]
+    assert mensaje.identificador == "+593987112233"
+    assert mensaje.telefono == "+593987112233"
+
+
+def test_sin_firma_valida_se_rechaza(cliente_wa, registrados):
+    """La firma es lo único que distingue a Meta de cualquiera que descubra la
+    URL del túnel."""
+    import json as _json
+    cuerpo = _json.dumps(PAYLOAD_WA).encode()
+    respuesta = cliente_wa.post(RUTA_WA, content=cuerpo,
+                                headers={"X-Hub-Signature-256": "sha256=falsa"})
+    assert respuesta.status_code == 403
+    assert registrados == []
+
+
+def test_los_estados_de_entrega_no_generan_conversacion(cliente_wa, registrados):
+    import json as _json
+    estados = {"object": "whatsapp_business_account", "entry": [{"changes": [
+        {"field": "messages", "value": {"messaging_product": "whatsapp",
+         "statuses": [{"id": "wamid.X", "status": "read"}]}}]}]}
+    cuerpo = _json.dumps(estados).encode()
+    respuesta = cliente_wa.post(RUTA_WA, content=cuerpo, headers=_firmar(cuerpo))
+    assert respuesta.status_code == 200
+    assert registrados == []

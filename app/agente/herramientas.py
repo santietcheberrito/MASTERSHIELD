@@ -255,7 +255,11 @@ async def finalizar_calificacion(conversacion_id: int) -> dict[str, Any]:
         "mensaje": (
             "Calificacion cerrada. Al despedirse, envie un unico mensaje de confirmacion "
             f"indicando que un asesor MS lo llamara ({datos.get('disponibilidad') or 'proximamente'}) "
-            f"al numero {telefono} (con prefijo +593), y pida al cliente confirmar si el numero y el horario son correctos."
+            # El numero se le repite como lo escribio la persona, no en E.164: el
+            # normalizado es para la base y para Kommo. Decirle "+59321234567" a
+            # alguien que escribio "2 1234567" suena a maquina leyendo un campo.
+            f"al numero {datos.get('telefono') or telefono}, tal como esta escrito aca, "
+            "y pida al cliente confirmar si el numero y el horario son correctos."
         ),
     }
 

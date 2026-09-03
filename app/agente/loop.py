@@ -56,7 +56,7 @@ def _cliente():
     )
 
 
-def armar_sistema(datos: dict | None) -> list[str]:
+def armar_sistema(datos: dict | None, identificador: str | None = None) -> list[str]:
     """El prompt del sistema, en dos partes.
 
     La primera es estatica —instrucciones y conocimiento tecnico— e identica en
@@ -83,6 +83,18 @@ def armar_sistema(datos: dict | None) -> list[str]:
             f"- {k}: {' '.join(str(v).split())[:200]}" for k, v in sorted(datos.items())
         )
         estado = f"{conocido}\n\nNo vuelva a preguntar nada de esto."
+
+        # El telefono del canal se siembra solo, sin que nadie lo haya dicho. Si
+        # entrara al bloque de arriba a secas, "no vuelva a preguntar nada de
+        # esto" lo daria por confirmado y el agente cerraria con un numero que
+        # la persona nunca eligio. Se confirma, que no es lo mismo que pedirlo.
+        if identificador and datos.get("telefono") == identificador:
+            estado += (
+                "\n\nEl telefono de arriba es el numero desde el que le escriben, "
+                "no uno que la persona haya dado. Antes de cerrar ofrezcale la "
+                "alternativa —si lo llamamos a ese mismo numero o prefiere dejar "
+                "otra linea— y espere la respuesta."
+            )
     else:
         estado = "Todavia nada. Es el arranque de la conversacion."
 
@@ -158,7 +170,11 @@ async def responder(conversacion_id: int) -> Respuesta:
     """Corre un turno completo y devuelve el texto a enviar."""
     settings = obtener_settings()
 
-    datos = await db.valor("SELECT datos FROM conversaciones WHERE id = $1", conversacion_id)
+    fila = await db.consultar_una(
+        "SELECT datos, identificador FROM conversaciones WHERE id = $1", conversacion_id
+    )
+    datos = fila["datos"] if fila else None
+    identificador = fila["identificador"] if fila else None
     historial = await armar_historial(conversacion_id)
 
     if not historial:
@@ -167,7 +183,9 @@ async def responder(conversacion_id: int) -> Respuesta:
 
     proveedor = _cliente()
     definiciones = herramientas.definiciones()
-    mensajes = proveedor.mensajes_iniciales(armar_sistema(datos), historial)
+    mensajes = proveedor.mensajes_iniciales(
+        armar_sistema(datos, identificador), historial
+    )
 
     respuesta = Respuesta(texto="")
 

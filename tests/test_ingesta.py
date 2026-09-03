@@ -5,7 +5,7 @@ import pytest
 from app import ingesta
 from app.canales.base import MensajeEntrante
 
-pytestmark = pytest.mark.db
+pytestmark = [pytest.mark.db, pytest.mark.usefixtures("settings_de_prueba")]
 
 
 def mensaje(n: int = 1, chat: str = "7", **extra) -> MensajeEntrante:
@@ -250,3 +250,58 @@ async def test_sin_conversacion_no_pasa_nada(pool_en_transaccion):
     assert await ingesta.registrar_intervencion_humana(
         "telegram", "999999", "hola", "m-3"
     ) is None
+
+
+async def test_el_telefono_relevado_no_lo_pisa_el_del_canal(pool_en_transaccion):
+    """En WhatsApp el número del remitente viene en cada mensaje. Si pisara al
+    relevado, el número que el cliente pidió que le llamen —una oficina, un
+    fijo— se perdería en cuanto escribiera de nuevo."""
+    conexion = pool_en_transaccion
+    from app.agente import herramientas
+
+    await ingesta.registrar(
+        mensaje(1, chat="+5490000000001", canal="whatsapp",
+                id_externo="whatsapp:1", telefono="+5490000000001"), 6)
+    conv = await conexion.fetchrow(
+        "SELECT id, telefono FROM conversaciones WHERE identificador = '+5490000000001'")
+    assert conv["telefono"] == "+5490000000001", "el del canal sirve como valor inicial"
+
+    await herramientas.guardar_dato(conv["id"], "telefono", "+593 2 1234567")
+
+    # Llega otro mensaje del mismo remitente.
+    await ingesta.registrar(
+        mensaje(2, chat="+5490000000001", canal="whatsapp",
+                id_externo="whatsapp:2", telefono="+5490000000001"), 6)
+
+    assert await conexion.fetchval(
+        "SELECT telefono FROM conversaciones WHERE id = $1", conv["id"]
+    ) == "+59321234567", "gana el que dio el cliente"
+
+
+async def test_el_telefono_del_canal_siembra_los_datos(pool_en_transaccion):
+    """En WhatsApp ya sabemos a qué número escribe la persona.
+
+    Sembrarlo en `datos` desde el primer mensaje es lo que le permite al agente
+    confirmarlo —"¿lo llamamos a este mismo número?"— en vez de hacerle tipear
+    algo que tenemos delante.
+    """
+    conexion = pool_en_transaccion
+
+    await ingesta.registrar(
+        mensaje(1, chat="+593999123456", canal="whatsapp",
+                id_externo="whatsapp:siembra", telefono="+593999123456"), 6)
+
+    datos = await conexion.fetchval(
+        "SELECT datos FROM conversaciones WHERE identificador = '+593999123456'")
+    assert datos["telefono"] == "+593999123456"
+
+
+async def test_sin_telefono_de_canal_los_datos_arrancan_vacios(pool_en_transaccion):
+    """En Telegram no viene, y `datos` no puede quedar con una clave en NULL:
+    `finalizar_calificacion` la leería como presente y cerraría sin número."""
+    conexion = pool_en_transaccion
+
+    await ingesta.registrar(mensaje(1, chat="555001", id_externo="tg:siembra"), 6)
+
+    assert await conexion.fetchval(
+        "SELECT datos FROM conversaciones WHERE identificador = '555001'") == {}

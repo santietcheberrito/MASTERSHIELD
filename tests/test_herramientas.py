@@ -136,6 +136,7 @@ async def test_sin_objetivo_no_sabe_que_producto_es(pool_en_transaccion):
 COMPLETO = {
     "linea": "arquitectonico", "objetivo": "control_solar", "zona": "quito_y_valles",
     "metros_cuadrados": 20, "telefono": "+593999123456",
+    "disponibilidad": "el jueves por la mañana",
 }
 
 
@@ -172,10 +173,26 @@ async def test_no_finaliza_sin_metros_en_arquitectonico(pool_en_transaccion):
     assert (await herramientas.finalizar_calificacion(id_conv))["falta"] == ["metros_cuadrados"]
 
 
+async def test_no_finaliza_sin_disponibilidad(pool_en_transaccion):
+    """Sin esto cerraba dos veces: una antes de saber el horario y otra despues.
+
+    El lead entraba a Kommo con un puntaje, y sesenta segundos mas tarde con
+    otro, dejando dos notas y un paso por la etapa equivocada.
+    """
+    datos = {k: v for k, v in COMPLETO.items() if k != "disponibilidad"}
+    id_conv = await _conversacion(pool_en_transaccion, datos)
+
+    r = await herramientas.finalizar_calificacion(id_conv)
+
+    assert r["finalizada"] is False
+    assert r["falta"] == ["disponibilidad"]
+
+
 async def test_vehicular_pide_el_modelo_y_no_los_metros(pool_en_transaccion):
     id_conv = await _conversacion(
         pool_en_transaccion,
-        {"linea": "vehicular", "zona": "quito_y_valles", "telefono": "+593999123456"},
+        {"linea": "vehicular", "zona": "quito_y_valles", "telefono": "+593999123456",
+         "disponibilidad": "el jueves"},
     )
     assert (await herramientas.finalizar_calificacion(id_conv))["falta"] == ["modelo_vehiculo"]
 
@@ -310,7 +327,10 @@ async def test_al_cerrar_devuelve_el_telefono_para_confirmarlo(pool_en_transacci
     assert r["finalizada"] is True
     assert r["telefono_confirmado"] == "+593999123456"
     assert r["disponibilidad"] == "jueves por la mañana"
-    assert "+593999123456" in r["mensaje"]
+    # El mensaje le repite el numero como lo escribio la persona, no en E.164:
+    # el normalizado es para la base y para Kommo. Decirle "+593999123456" a
+    # alguien que escribio "0999123456" suena a maquina leyendo un campo.
+    assert "0999123456" in r["mensaje"]
 
 
 # --- endurecimiento contra inyección de segundo orden -----------------------

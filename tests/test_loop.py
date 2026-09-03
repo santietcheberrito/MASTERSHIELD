@@ -228,3 +228,24 @@ async def test_el_precio_calculado_en_el_turno_si_se_envia(
 
     assert r.precio_bloqueado is False
     assert "1050" in r.texto
+
+
+def test_el_telefono_del_canal_va_marcado_como_sin_confirmar(settings_de_prueba):
+    """Sembrado en `datos`, caía bajo "no vuelva a preguntar nada de esto" y el
+    agente cerraba con un número que la persona nunca eligió."""
+    dinamico = loop.armar_sistema(
+        {"telefono": "+593999123456"}, identificador="+593999123456"
+    )[1]
+
+    assert "no uno que la persona haya dado" in dinamico
+    assert "prefiere dejar" in dinamico
+
+
+def test_un_telefono_distinto_al_del_canal_no_se_repregunta(settings_de_prueba):
+    """Si dio otro número, ya lo eligió: volver a ofrecerle la alternativa es
+    hacerle contestar dos veces lo mismo."""
+    dinamico = loop.armar_sistema(
+        {"telefono": "+59321234567"}, identificador="+593999123456"
+    )[1]
+
+    assert "no uno que la persona haya dado" not in dinamico

@@ -139,7 +139,7 @@ def test_credenciales_faltantes():
     s = armar(anthropic_api_key="sk-test", kommo_subdomain="cliente")
     assert "ANTHROPIC_API_KEY" not in s.credenciales_faltantes
     assert "KOMMO_SUBDOMAIN" not in s.credenciales_faltantes
-    assert "BSP_TOKEN" in s.credenciales_faltantes
+    assert "WHATSAPP_TOKEN" in s.credenciales_faltantes
     assert "KOMMO_ACCESS_TOKEN" in s.credenciales_faltantes
 
 

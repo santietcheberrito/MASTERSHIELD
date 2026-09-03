@@ -44,6 +44,13 @@ async def _inicializar_conexion(conexion: asyncpg.Connection) -> None:
             schema="pg_catalog",
         )
 
+    # Si el proceso muere a mitad de una transaccion —un deploy de Railway, un
+    # Ctrl+C—, el pooler mantiene la conexion abierta del lado del servidor con
+    # sus locks tomados, y el proceso nuevo se queda esperando esas mismas
+    # filas para siempre. Ya paso. Con esto la transaccion huerfana se corta
+    # sola y el servicio nuevo arranca limpio.
+    await conexion.execute("SET idle_in_transaction_session_timeout = '30s'")
+
 
 def _usa_pooler_en_modo_transaccion(dsn: str) -> bool:
     try:
