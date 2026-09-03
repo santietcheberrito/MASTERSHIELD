@@ -59,6 +59,9 @@ CAMPOS = [
     ("modelo_vehiculo", "Modelo de vehículo", "text", None),
     ("medidas_detalle", "Detalle de medidas", "textarea", None),
     ("canal", "Canal", "select", ["Telegram", "WhatsApp", "Consola"]),
+    # Solo se llena en las derivaciones, y es lo primero que necesita leer quien
+    # tome la conversacion: por que hay alguien esperando.
+    ("motivo_derivacion", "Motivo de derivación", "textarea", None),
 ]
 
 

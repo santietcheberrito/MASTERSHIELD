@@ -117,6 +117,61 @@ def parsear(payload: dict[str, Any]) -> MensajeEntrante | None:
     )
 
 
+# Un eco no siempre es un mensaje: tambien avisa que alguien borro o edito uno
+# que ya habia mandado. Para nosotros los tres dicen lo mismo —hay una persona
+# operando esta conversacion— y el texto es solo para el historial.
+_ECOS_SIN_TEXTO = {
+    "revoke": "[el asesor borro un mensaje]",
+    "edit": "[el asesor edito un mensaje]",
+}
+
+
+def parsear_eco(payload: dict[str, Any]) -> MensajeEntrante | None:
+    """Un mensaje que salio de nuestro numero y que no mandamos nosotros.
+
+    Meta lo manda en el campo `smb_message_echoes`, que hay que suscribir aparte
+    de `messages`, y dentro del payload el array se llama `message_echoes`. Es
+    la unica forma de enterarse de que alguien del equipo contesto desde la app
+    de WhatsApp Business sobre el mismo numero. Sin esto el agente sigue
+    escribiendo encima del asesor.
+
+    Ojo con el alcance: esto cubre la app de WhatsApp Business, no una
+    herramienta que mande por la Cloud API. Un vendedor que conteste desde
+    Kommo no genera eco, y esa deteccion tiene que venir de Kommo.
+
+    Devuelve None si el evento no es un eco. Quien decide si el eco es nuestro
+    o de una persona es el webhook, comparando el id contra lo que enviamos.
+    """
+    try:
+        cambio = payload["entry"][0]["changes"][0]["value"]
+    except (KeyError, IndexError, TypeError):
+        return None
+
+    ecos = cambio.get("message_echoes")
+    if not ecos:
+        return None
+
+    eco = ecos[0]
+    destinatario = eco.get("to")
+    id_mensaje = eco.get("id")
+    if not destinatario or not id_mensaje:
+        return None
+
+    # El identificador de la conversacion es el cliente, no nuestro numero: un
+    # eco va hacia afuera, asi que el interlocutor esta en `to`.
+    tipo_meta = eco.get("type")
+    return MensajeEntrante(
+        canal=CANAL,
+        identificador=f"+{destinatario.lstrip('+')}",
+        id_externo=f"{CANAL}:{id_mensaje}",
+        texto=_ECOS_SIN_TEXTO.get(tipo_meta) or _texto(eco),
+        tipo=TIPOS.get(tipo_meta, "otro"),
+        nombre=None,
+        telefono=None,
+        payload=payload,
+    )
+
+
 class WhatsAppError(RuntimeError):
     """Meta rechazo la llamada. El mensaje incluye lo que dijo."""
 

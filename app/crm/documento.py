@@ -219,6 +219,7 @@ async def armar(conversacion_id: int) -> Documento:
             "disponibilidad": datos.get("disponibilidad"),
             "modelo_vehiculo": datos.get("modelo_vehiculo"),
             "medidas_detalle": datos.get("medidas_detalle"),
+            "motivo_derivacion": motivo_derivacion,
         },
         nota=nota,
         tarea={

@@ -11,6 +11,7 @@ import logging
 import asyncpg
 
 from app import db
+from app.config import obtener_settings
 from app.canales.base import MensajeEntrante
 
 logger = logging.getLogger(__name__)
@@ -136,8 +137,18 @@ async def registrar(mensaje: MensajeEntrante, demora_seg: int) -> bool:
 
 _MENSAJE_DE_VENDEDOR = """
 WITH conv AS (
-    UPDATE conversaciones SET estado = 'pausada', ultimo_mensaje_en = now()
-    WHERE canal = $1 AND identificador = $2 AND estado NOT IN ('pausada', 'derivada')
+    -- `pausada` entra en el WHERE a proposito: el segundo mensaje del vendedor
+    -- tiene que correr el vencimiento, igual que un mensaje del cliente corre
+    -- la ventana del debounce. Sin eso el agente volveria a hablar a las seis
+    -- horas en medio de una conversacion que el asesor sigue teniendo.
+    --
+    -- `derivada` no: ahi la conversacion se entrego a una persona a proposito y
+    -- el agente no vuelve por vencimiento.
+    UPDATE conversaciones SET
+        estado        = 'pausada',
+        pausada_hasta = now() + make_interval(hours => $5),
+        ultimo_mensaje_en = now()
+    WHERE canal = $1 AND identificador = $2 AND estado <> 'derivada'
     RETURNING id
 ),
 msg AS (
@@ -167,8 +178,9 @@ async def registrar_intervencion_humana(
     API de bots de Telegram no. Por eso el mecanismo vive aca y el disparador
     en cada adaptador.
     """
+    horas = obtener_settings().pausa_por_humano_horas
     id_conversacion = await db.valor(
-        _MENSAJE_DE_VENDEDOR, canal, identificador, texto, id_externo
+        _MENSAJE_DE_VENDEDOR, canal, identificador, texto, id_externo, horas
     )
     if id_conversacion is None:
         return None
@@ -179,6 +191,6 @@ async def registrar_intervencion_humana(
         "INSERT INTO eventos (conversacion_id, tipo, estado, detalle) "
         "VALUES ($1, 'pausada_por_humano', 'ok', $2)",
         id_conversacion,
-        {"canal": canal},
+        {"canal": canal, "horas": horas},
     )
     return id_conversacion

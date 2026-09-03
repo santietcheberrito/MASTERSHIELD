@@ -173,3 +173,65 @@ async def test_el_error_de_meta_llega_entero(respx_mock):
 ])
 def test_el_destino_de_envio(entrante, saliente):
     assert whatsapp.destino_de_envio(entrante) == saliente
+
+
+# --- ecos de mensajes salientes ---------------------------------------------
+
+def _eco(id_mensaje="wamid.eco1", texto="lo llamo yo en un rato", destino="593999123456"):
+    return {"entry": [{"changes": [{"field": "message_echoes", "value": {
+        "messaging_product": "whatsapp",
+        "metadata": {"phone_number_id": "1234"},
+        "message_echoes": [{
+            "from": "15551956977",
+            "to": destino,
+            "id": id_mensaje,
+            "timestamp": "1757000000",
+            "type": "text",
+            "text": {"body": texto},
+        }],
+    }}]}]}
+
+
+def test_un_eco_se_parsea_con_el_cliente_como_interlocutor():
+    """El eco va hacia afuera, así que quien está del otro lado es `to`. Tomar
+    `from` daría nuestro propio número como identificador de la conversación."""
+    eco = whatsapp.parsear_eco(_eco())
+
+    assert eco is not None
+    assert eco.identificador == "+593999123456"
+    assert eco.texto == "lo llamo yo en un rato"
+    assert eco.id_externo == "whatsapp:wamid.eco1"
+
+
+def test_un_mensaje_entrante_no_es_un_eco():
+    assert whatsapp.parsear_eco(payload()) is None
+
+
+def test_un_eco_no_es_un_mensaje_entrante():
+    """Si `parsear` lo tomara, el mensaje del asesor entraría como si lo hubiera
+    escrito el cliente y el agente le contestaría a su propio equipo."""
+    assert whatsapp.parsear(_eco()) is None
+
+
+def test_un_eco_sin_destinatario_se_descarta():
+    payload = _eco()
+    del payload["entry"][0]["changes"][0]["value"]["message_echoes"][0]["to"]
+    assert whatsapp.parsear_eco(payload) is None
+
+
+@pytest.mark.parametrize("tipo,esperado", [
+    ("revoke", "[el asesor borro un mensaje]"),
+    ("edit", "[el asesor edito un mensaje]"),
+])
+def test_borrar_o_editar_tambien_es_actividad_humana(tipo, esperado):
+    """Los tres dicen lo mismo: hay una persona operando esta conversación. Sin
+    texto propio quedarían como un mensaje vacío en el historial."""
+    payload = _eco()
+    eco_crudo = payload["entry"][0]["changes"][0]["value"]["message_echoes"][0]
+    eco_crudo["type"] = tipo
+    del eco_crudo["text"]
+
+    eco = whatsapp.parsear_eco(payload)
+
+    assert eco is not None
+    assert eco.texto == esperado

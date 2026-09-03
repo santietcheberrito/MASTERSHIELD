@@ -309,6 +309,32 @@ async def escalar_a_humano(
 
 
 # ---------------------------------------------------------------------------
+# cerrar_sin_responder
+# ---------------------------------------------------------------------------
+
+async def cerrar_sin_responder(conversacion_id: int, motivo: str) -> dict[str, Any]:
+    """El agente decide que no hay nada que contestar, y eso queda registrado.
+
+    Existe para un caso puntual: un asesor estuvo conversando a mano, la pausa
+    vencio, y quedo un mensaje del cliente sin contestar. "Sin contestar" no
+    alcanza como criterio —un "gracias, perfecto" no es una consulta— y esa
+    diferencia no se puede escribir en SQL. La decide el agente.
+
+    Sin esto, la unica forma de no responder era devolver texto vacio, que es
+    indistinguible de un turno que fallo.
+    """
+    await db.ejecutar(
+        "INSERT INTO eventos (conversacion_id, tipo, estado, detalle) "
+        "VALUES ($1, 'silencio_deliberado', 'ok', $2)",
+        conversacion_id,
+        {"motivo": (motivo or "")[:LARGO_MAXIMO_TEXTO]},
+    )
+    logger.info("el agente decide no contestar | conversacion=%s: %s",
+                conversacion_id, motivo)
+    return {"sin_respuesta": True, "motivo": motivo}
+
+
+# ---------------------------------------------------------------------------
 # Definiciones que ve el modelo
 # ---------------------------------------------------------------------------
 
@@ -394,6 +420,26 @@ def definiciones() -> list[dict[str, Any]]:
                 "required": ["motivo"],
             },
         },
+        {
+            "nombre": "cerrar_sin_responder",
+            "descripcion": (
+                "Termina el turno sin mandar ningun mensaje. Usala cuando lo ultimo "
+                "que dijo el cliente no pide respuesta —un 'gracias', un 'perfecto', "
+                "un 'dale'— y contestar seria hablar por hablar. Tambien cuando un "
+                "asesor ya se hizo cargo del tema y agregar algo seria pisarlo. "
+                "En la duda, contesta: el silencio solo es correcto cuando es obvio."
+            ),
+            "esquema": {
+                "type": "object",
+                "properties": {
+                    "motivo": {
+                        "type": "string",
+                        "description": "Por que no hace falta contestar, en una linea",
+                    },
+                },
+                "required": ["motivo"],
+            },
+        },
     ]
 
 
@@ -422,6 +468,8 @@ async def ejecutar(nombre: str, conversacion_id: int, argumentos: dict[str, Any]
             # `estado` no se expone al modelo a proposito: 'cerrada' la decide
             # el codigo, no el agente.
             return await escalar_a_humano(conversacion_id, argumentos["motivo"])
+        if nombre == "cerrar_sin_responder":
+            return await cerrar_sin_responder(conversacion_id, argumentos["motivo"])
         return {"error": f"no existe la herramienta {nombre!r}"}
     except KeyError as e:
         return {"error": f"falta el argumento {e}"}

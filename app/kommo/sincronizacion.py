@@ -41,6 +41,10 @@ CAMPOS = {
     "modelo_vehiculo": "modelo_vehiculo",
     "medidas_detalle": "medidas_detalle",
     "canal": "canal",
+    # Por que esta esperando una persona. Estaba solo en la nota y en el texto
+    # de la tarea; como campo se ve en la tarjeta y se puede filtrar, que es lo
+    # que permite mirar de un vistazo que hay en la etapa de derivados.
+    "motivo_derivacion": "motivo_derivacion",
 }
 
 # La clasificacion del scoring, con la primera en mayuscula, como esta cargada

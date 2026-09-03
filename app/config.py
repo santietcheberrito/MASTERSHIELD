@@ -102,6 +102,12 @@ class Settings(BaseSettings):
     modelo_agente: str = "gpt-5"
     max_iteraciones_herramientas: int = Field(default=6, gt=0, le=20)
 
+    # Cuanto se calla el agente despues de que un vendedor escribio a mano. Cada
+    # mensaje del vendedor lo renueva. Termina solo porque `pausada` sin
+    # vencimiento deja la conversacion muerta: a la semana siguiente el mismo
+    # cliente escribe por otra cosa y no le contesta nadie.
+    pausa_por_humano_horas: int = Field(default=6, gt=0, le=168)
+
     # Topes de uso. Pasado cualquiera de estos, el agente deja de contestar esa
     # conversacion y se avisa a una persona para que mire quien es. No son
     # limites para el cliente comun: son para que un script no nos haga una

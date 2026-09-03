@@ -41,6 +41,9 @@ class Respuesta:
     # y hubo que reemplazarlo. Deberia ser siempre False: si aparece, hay algo
     # que investigar.
     precio_bloqueado: bool = False
+    # True si el agente decidio callarse. Sin esto, no mandar nada es
+    # indistinguible de un turno que fallo, y el worker lo loguea como problema.
+    silencio_deliberado: bool = False
 
 
 @lru_cache
@@ -56,7 +59,11 @@ def _cliente():
     )
 
 
-def armar_sistema(datos: dict | None, identificador: str | None = None) -> list[str]:
+def armar_sistema(
+    datos: dict | None,
+    identificador: str | None = None,
+    hubo_asesor: bool = False,
+) -> list[str]:
     """El prompt del sistema, en dos partes.
 
     La primera es estatica —instrucciones y conocimiento tecnico— e identica en
@@ -102,6 +109,22 @@ def armar_sistema(datos: dict | None, identificador: str | None = None) -> list[
         f"# Ahora\n\n{_momento()}\n\n"
         f"# Lo que ya sabe de esta conversacion\n\n{estado}"
     )
+
+    # Un asesor escribio en esta conversacion. Los mensajes de el estan en el
+    # historial como si fueran suyos, asi que sin este aviso el agente cree que
+    # los dijo el y contesta encima de un tema que ya alguien manejo.
+    if hubo_asesor:
+        dinamico += (
+            "\n\n# Un asesor MS estuvo en esta conversacion\n\n"
+            "Parte de lo que figura como suyo lo escribio una persona del equipo. "
+            "No lo repita, no lo corrija y no vuelva a preguntar lo que el asesor "
+            "ya pregunto.\n\n"
+            "Antes de escribir, pregunte si hace falta. Si lo ultimo del cliente "
+            "es un 'gracias', un 'perfecto' o un 'dale', no pide respuesta: llame "
+            "a `cerrar_sin_responder`. Si es una consulta nueva o algo que quedo "
+            "sin contestar, atiendala normalmente. En la duda, conteste."
+        )
+
     return [estatico, dinamico]
 
 
@@ -177,6 +200,14 @@ async def responder(conversacion_id: int) -> Respuesta:
     identificador = fila["identificador"] if fila else None
     historial = await armar_historial(conversacion_id)
 
+    # `armar_historial` mezcla los mensajes del vendedor con los del agente,
+    # porque desde el lado del cliente vinieron del mismo numero. Para el
+    # agente esa diferencia si importa, y se pregunta antes de perderla.
+    hubo_asesor = bool(await db.valor(
+        "SELECT 1 FROM mensajes WHERE conversacion_id = $1 AND rol = 'vendedor' LIMIT 1",
+        conversacion_id,
+    ))
+
     if not historial:
         logger.warning("turno sin historial | conversacion=%s", conversacion_id)
         return Respuesta(texto="")
@@ -184,7 +215,7 @@ async def responder(conversacion_id: int) -> Respuesta:
     proveedor = _cliente()
     definiciones = herramientas.definiciones()
     mensajes = proveedor.mensajes_iniciales(
-        armar_sistema(datos, identificador), historial
+        armar_sistema(datos, identificador, hubo_asesor), historial
     )
 
     respuesta = Respuesta(texto="")
@@ -219,6 +250,15 @@ async def responder(conversacion_id: int) -> Respuesta:
                 llamada.nombre, conversacion_id, llamada.argumentos
             )
             respuesta.herramientas_usadas.append(llamada.nombre)
+
+            # Decidio no contestar: se corta aca. Seguir el ciclo le daria la
+            # oportunidad de escribir algo despues de haber dicho que no hace
+            # falta, y lo que se manda es lo ultimo que dijo, no lo que decidio.
+            if llamada.nombre == "cerrar_sin_responder" and resultado.get("sin_respuesta"):
+                respuesta.texto = ""
+                respuesta.silencio_deliberado = True
+                return respuesta
+
             if llamada.nombre == "calcular_precio" and resultado.get("puede_cotizar"):
                 montos_autorizados.update(
                     v for v in (resultado.get("subtotal_sin_iva"),

@@ -230,3 +230,74 @@ def test_los_estados_de_entrega_no_generan_conversacion(cliente_wa, registrados)
     respuesta = cliente_wa.post(RUTA_WA, content=cuerpo, headers=_firmar(cuerpo))
     assert respuesta.status_code == 200
     assert registrados == []
+
+
+# --- ecos: un asesor escribió desde la app de WhatsApp Business --------------
+
+ECO_WA = {"object": "whatsapp_business_account", "entry": [{"changes": [
+    {"field": "smb_message_echoes", "value": {
+        "messaging_product": "whatsapp",
+        "metadata": {"phone_number_id": "1234"},
+        "message_echoes": [{
+            "from": "15551956977", "to": "593987112233", "id": "wamid.eco",
+            "timestamp": "1757000000", "type": "text",
+            "text": {"body": "buenas, soy Andrés, lo llamo en un rato"},
+        }],
+    }}]}]}
+
+
+@pytest.fixture
+def intervenciones(monkeypatch):
+    """Lo que importa acá es que el endpoint distinga un eco de un mensaje."""
+    capturadas = []
+
+    async def _registrar(canal, identificador, texto, id_externo):
+        capturadas.append((canal, identificador, texto, id_externo))
+        return 1
+
+    async def _valor(*args, **kwargs):
+        return None  # ningún mensaje nuestro con ese id: lo escribió una persona
+
+    monkeypatch.setattr(ingesta, "registrar_intervencion_humana", _registrar)
+    monkeypatch.setattr(db, "valor", _valor)
+    return capturadas
+
+
+def test_un_eco_ajeno_pausa_la_conversacion(cliente_wa, registrados, intervenciones):
+    """Un asesor contestó desde su teléfono. El agente tiene que callarse, y el
+    mensaje no puede entrar como si lo hubiera escrito el cliente."""
+    import json as _json
+    cuerpo = _json.dumps(ECO_WA).encode()
+
+    respuesta = cliente_wa.post(RUTA_WA, content=cuerpo, headers=_firmar(cuerpo))
+
+    assert respuesta.status_code == 200
+    assert len(intervenciones) == 1
+    canal, identificador, texto, id_externo = intervenciones[0]
+    assert identificador == "+593987112233", "el interlocutor es el cliente, no nuestro número"
+    assert "soy Andrés" in texto
+    assert id_externo == "whatsapp:wamid.eco"
+    assert registrados == [], "un eco no es una consulta entrante"
+
+
+def test_el_eco_de_un_mensaje_nuestro_se_ignora(cliente_wa, registrados, monkeypatch):
+    """Meta hace eco también de lo que mandamos nosotros. Si eso pausara, el
+    agente se callaría solo después de cada respuesta."""
+    import json as _json
+    capturadas = []
+
+    async def _registrar(*args):
+        capturadas.append(args)
+        return 1
+
+    async def _valor(*args, **kwargs):
+        return 1  # ya está en `mensajes`: lo enviamos nosotros
+
+    monkeypatch.setattr(ingesta, "registrar_intervencion_humana", _registrar)
+    monkeypatch.setattr(db, "valor", _valor)
+
+    cuerpo = _json.dumps(ECO_WA).encode()
+    respuesta = cliente_wa.post(RUTA_WA, content=cuerpo, headers=_firmar(cuerpo))
+
+    assert respuesta.status_code == 200
+    assert capturadas == []

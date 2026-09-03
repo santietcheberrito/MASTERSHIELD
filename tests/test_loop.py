@@ -249,3 +249,106 @@ def test_un_telefono_distinto_al_del_canal_no_se_repregunta(settings_de_prueba):
     )[1]
 
     assert "no uno que la persona haya dado" not in dinamico
+
+
+# --- después de que intervino un asesor -------------------------------------
+
+@pytest.mark.db
+async def test_el_agente_puede_decidir_no_contestar(
+    pool_en_transaccion, monkeypatch, settings_de_prueba
+):
+    """Un "gracias" después de que un asesor cerró el tema no pide respuesta.
+    Sin esta herramienta, la única forma de callarse era devolver texto vacío,
+    que es indistinguible de un turno que falló."""
+    conexion = pool_en_transaccion
+    id_conv = await _conversacion(conexion)
+    await _mensaje(conexion, id_conv, "cliente", "listo, muchas gracias!")
+
+    proveedor = _ProveedorFalso([
+        Salida(texto="", llamadas=[Llamada("t1", "cerrar_sin_responder",
+                                           {"motivo": "es un agradecimiento"})]),
+    ])
+    monkeypatch.setattr(loop, "_cliente", lambda: proveedor)
+
+    r = await loop.responder(id_conv)
+
+    assert r.texto == ""
+    assert r.silencio_deliberado is True
+    assert await conexion.fetchval(
+        "SELECT count(*) FROM eventos WHERE conversacion_id = $1 "
+        "AND tipo = 'silencio_deliberado'", id_conv,
+    ) == 1
+
+
+@pytest.mark.db
+async def test_decidir_callarse_corta_el_turno(
+    pool_en_transaccion, monkeypatch, settings_de_prueba
+):
+    """Seguir el ciclo le daría la oportunidad de escribir algo después de haber
+    dicho que no hace falta, y lo que se manda es lo último que dijo."""
+    conexion = pool_en_transaccion
+    id_conv = await _conversacion(conexion)
+    await _mensaje(conexion, id_conv, "cliente", "perfecto")
+
+    proveedor = _ProveedorFalso([
+        Salida(texto="", llamadas=[Llamada("t1", "cerrar_sin_responder",
+                                           {"motivo": "no pide respuesta"})]),
+        Salida(texto="¡Quedo a las órdenes!"),  # no debería llegar a pedirla
+    ])
+    monkeypatch.setattr(loop, "_cliente", lambda: proveedor)
+
+    r = await loop.responder(id_conv)
+
+    assert r.texto == ""
+    assert r.iteraciones == 1
+
+
+@pytest.mark.db
+async def test_avisa_que_hubo_un_asesor_en_la_conversacion(
+    pool_en_transaccion, monkeypatch, settings_de_prueba
+):
+    """Los mensajes del vendedor llegan al historial como si fueran del agente,
+    porque desde el lado del cliente vinieron del mismo número. Sin este aviso
+    el agente cree que los dijo él."""
+    conexion = pool_en_transaccion
+    id_conv = await _conversacion(conexion)
+    await _mensaje(conexion, id_conv, "cliente", "hola")
+    await _mensaje(conexion, id_conv, "vendedor", "buenas, soy Andrés de MasterShield")
+    await _mensaje(conexion, id_conv, "cliente", "gracias!")
+
+    vistos = {}
+
+    class _Espia(_ProveedorFalso):
+        def mensajes_iniciales(self, sistema, historial):
+            vistos["sistema"] = "\n".join(sistema)
+            return list(historial)
+
+    proveedor = _Espia([Salida(texto="")])
+    monkeypatch.setattr(loop, "_cliente", lambda: proveedor)
+
+    await loop.responder(id_conv)
+
+    assert "Un asesor MS estuvo en esta conversacion" in vistos["sistema"]
+    assert "cerrar_sin_responder" in vistos["sistema"]
+
+
+@pytest.mark.db
+async def test_sin_asesor_no_se_inyecta_ese_contexto(
+    pool_en_transaccion, monkeypatch, settings_de_prueba
+):
+    conexion = pool_en_transaccion
+    id_conv = await _conversacion(conexion)
+    await _mensaje(conexion, id_conv, "cliente", "hola")
+
+    vistos = {}
+
+    class _Espia(_ProveedorFalso):
+        def mensajes_iniciales(self, sistema, historial):
+            vistos["sistema"] = "\n".join(sistema)
+            return list(historial)
+
+    monkeypatch.setattr(loop, "_cliente", lambda: _Espia([Salida(texto="Buenas tardes")]))
+
+    await loop.responder(id_conv)
+
+    assert "Un asesor MS estuvo" not in vistos["sistema"]

@@ -13,7 +13,7 @@ import logging
 from fastapi import APIRouter, Header, HTTPException, Request, Response
 from fastapi.responses import PlainTextResponse
 
-from app import humanizacion, ingesta
+from app import db, humanizacion, ingesta
 from app.canales import telegram, whatsapp
 from app.config import obtener_settings
 
@@ -71,6 +71,32 @@ async def verificar_whatsapp(request: Request) -> Response:
     return PlainTextResponse(desafio)
 
 
+async def _atender_eco(eco) -> None:
+    """Decide si el eco lo mandamos nosotros o una persona, y actua.
+
+    Nunca propaga: un eco que no se puede procesar no puede hacer que Meta
+    reintente el webhook, porque el mensaje del cliente ya se guardo o se va a
+    guardar por otra via. Lo peor que pasa es que la pausa no se active y el
+    agente hable encima del asesor, y eso queda en el log.
+    """
+    try:
+        # `id_externo` es unico: si ya esta, es de un mensaje que enviamos
+        # nosotros y lo guardamos al enviarlo.
+        nuestro = await db.valor(
+            "SELECT 1 FROM mensajes WHERE id_externo = $1", eco.id_externo
+        )
+        if nuestro:
+            return
+
+        id_conversacion = await ingesta.registrar_intervencion_humana(
+            eco.canal, eco.identificador, eco.texto, eco.id_externo
+        )
+        if id_conversacion is None:
+            logger.info("eco de una conversacion que no tenemos | %s", eco.identificador)
+    except Exception:
+        logger.exception("no se pudo procesar el eco de WhatsApp")
+
+
 @router.post("/webhook/whatsapp")
 async def recibir_whatsapp(
     request: Request,
@@ -88,6 +114,14 @@ async def recibir_whatsapp(
         payload = json.loads(crudo)
     except ValueError:
         logger.warning("webhook de WhatsApp con cuerpo que no es JSON")
+        return Response(status_code=200)
+
+    # Un mensaje que salio de nuestro numero. Si el id no es de algo que
+    # mandamos nosotros, lo escribio una persona del equipo desde otra
+    # herramienta, y el agente tiene que dejar de contestar esa conversacion.
+    eco = whatsapp.parsear_eco(payload)
+    if eco is not None:
+        await _atender_eco(eco)
         return Response(status_code=200)
 
     mensaje = whatsapp.parsear(payload)

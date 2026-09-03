@@ -189,6 +189,13 @@ async def procesar_turno(turno: Turno) -> None:
         respuesta.texto.replace("\n", " / "),
     )
 
+    if respuesta.silencio_deliberado:
+        # No es lo mismo que un turno vacio: el agente miro lo que quedo sin
+        # contestar y decidio que no pedia respuesta. Queda en `eventos`.
+        logger.info("el agente decidio no contestar | conversacion=%s",
+                    turno.conversacion_id)
+        return
+
     if not respuesta.texto:
         # Puede pasar si el modelo solo llamo herramientas y se agotaron las
         # iteraciones. No se manda nada, pero queda el log para investigarlo.

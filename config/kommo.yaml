@@ -48,6 +48,7 @@ campos_lead:
   modelo_vehiculo: 424262
   medidas_detalle: 424264
   canal: 424266
+  motivo_derivacion: 457954
 campos_contacto:
   telefono: 420186
   telefono_tipo: 342936

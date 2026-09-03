@@ -17,6 +17,7 @@ from app import db, webhook
 from app.config import Settings, obtener_settings
 from app.poller import Poller
 from app.crm.reintentos import Reintentos
+from app.pausas import Despertador
 from app.worker import Worker
 
 logger = logging.getLogger(__name__)
@@ -67,11 +68,13 @@ async def ciclo_de_vida(app: FastAPI):
 
     worker = Worker()
     reintentos = Reintentos()
+    despertador = Despertador()
     poller: Poller | None = None
 
     if base_lista:
         worker.arrancar()
         reintentos.arrancar()
+        despertador.arrancar()
 
         # El poller solo tiene sentido en desarrollo: en produccion Telegram
         # nos pega al webhook, que es ademas lo unico que soporta WhatsApp.
@@ -87,6 +90,7 @@ async def ciclo_de_vida(app: FastAPI):
 
     app.state.worker = worker
     app.state.reintentos = reintentos
+    app.state.despertador = despertador
     app.state.poller = poller
 
     try:
@@ -94,6 +98,7 @@ async def ciclo_de_vida(app: FastAPI):
     finally:
         if poller is not None:
             await poller.detener()
+        await despertador.detener()
         await reintentos.detener()
         await worker.detener()
         await db.cerrar()

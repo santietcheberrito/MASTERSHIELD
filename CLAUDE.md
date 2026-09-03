@@ -175,7 +175,11 @@ Herramientas:
   `conversaciones.datos`. Se llama apenas el cliente menciona el dato,
   no al final.
 - `finalizar_calificacion()` → cierra el relevamiento y dispara scoring + Kommo.
-- `escalar_a_humano(motivo)` → pausa el agente y notifica al equipo.
+  Es idempotente: si ya se cerró, no vuelve a sincronizar.
+- `escalar_a_humano(motivo)` → pausa el agente y crea la tarea urgente en Kommo.
+- `cerrar_sin_responder(motivo)` → termina el turno sin mandar nada. Existe para
+  que "no contestar" sea una decisión registrada y no un turno vacío, que es
+  indistinguible de uno que falló.
 
 El prompt del sistema vive en `prompts/agente.md`, versionado. No hardcodearlo.
 
@@ -333,9 +337,46 @@ de la empresa y ofrece pasar con un vendedor. Está acordado con el cliente.
 
 ## Handoff y pausa
 
-- `escalar_a_humano` → estado `derivada`, notificación al equipo.
-- Si un vendedor responde manualmente desde el número → estado `pausada`,
-  el agente deja de contestar esa conversación.
+- `escalar_a_humano` → estado `derivada`.
+
+### Cómo se avisa de que alguien necesita una persona
+
+**Kommo no tiene endpoint de notificaciones.** Su centro de notificaciones es
+JavaScript que corre dentro de un widget, en el navegador, y las suscripciones
+son un callback JS. Desde el backend no se puede llamar. Lo único que la API
+deja provocar es el aviso de tarea por vencer, que sí llega como campana, push
+al móvil y mail al responsable. **Así que la tarea urgente es el aviso.**
+
+Una derivación crea tarea aunque no esté calificada, vence en 15 minutos en vez
+de a fin de día, y el texto arranca con `ATENDER` y lleva el motivo. Si ya había
+una tarea de llamado se adelanta, en vez de dejar dos filas para la misma
+persona.
+
+La segunda capa la configura MasterShield sin código: Digital Pipeline,
+disparador "el lead entra a la etapa Derivado a un asesor", acciones crear
+tarea, cambiar responsable o mandar correo. Nosotros ya movemos el lead ahí.
+
+### La pausa por intervención humana
+
+Si un vendedor responde manualmente desde el número → estado `pausada`, el
+agente deja de contestar esa conversación.
+
+**La pausa vence.** `pausada_hasta` arranca en 6 horas (`PAUSA_POR_HUMANO_HORAS`)
+y cada mensaje del vendedor lo corre hacia adelante, igual que un mensaje del
+cliente corre la ventana del debounce. Sin vencimiento, `pausada` era un estado
+sin salida: a la semana siguiente el mismo cliente escribía por otra cosa y no
+le contestaba nadie.
+
+Al vencer, la conversación vuelve a `activa` **y el agente no escribe**. Sólo se
+agenda un turno si el cliente dejó algo sin contestar. Y ahí tampoco se contesta
+automáticamente: "sin contestar" no alcanza como criterio, porque un "gracias"
+no es una consulta. Esa diferencia la decide el agente, que recibe el aviso de
+que hubo un asesor en la conversación y puede llamar a `cerrar_sin_responder`.
+
+**Cómo nos enteramos.** El campo `smb_message_echoes` del webhook de Meta, que
+se suscribe aparte de `messages`. Cubre la app de WhatsApp Business y los
+dispositivos vinculados: un vendedor que conteste **desde Kommo** no genera eco,
+y esa detección tendría que venir de Kommo. Telegram no lo soporta.
 - Fuera de horario: el agente igual atiende y califica (es una ventaja de
   venta), pero la tarea de llamado se agenda para el próximo día hábil.
   El horario se evalúa siempre en hora de Ecuador (UTC-5), no en la del

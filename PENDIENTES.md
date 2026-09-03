@@ -211,10 +211,16 @@ primer mensaje, este es el primer parámetro a mirar.
 
 ## Deuda del código, sin bloqueos externos
 
-- [ ] **El reintento del CRM no existe.** `crm_pendiente` y `crm_reintentar_en`
-  se escriben cuando una sincronización falla, pero no hay ningún loop que los
-  lea. Una conversación que falla queda marcada para siempre. Es una promesa
-  del `CLAUDE.md` que hoy no se cumple.
+- [x] **El reintento del CRM.** `app/crm/reintentos.py`, con backoff de 1 min a
+  6 h y un tope de cinco intentos. Agotado no es resuelto: la fila queda
+  pendiente con `crm_reintentar_en` en NULL, fuera del loop pero contada.
+- [x] **El aviso de que alguien necesita una persona.** Vía tarea urgente en
+  Kommo, que es la única notificación que su API deja provocar.
+- [x] **La pausa por intervención humana**, con vencimiento de 6 horas y
+  razonamiento al despertar.
+- [ ] **Confirmar cómo van a trabajar los vendedores de MasterShield.**
+  `smb_message_echoes` cubre la app de WhatsApp Business. Si contestan desde
+  Kommo no hay eco de Meta y la detección tiene que venir de Kommo.
 - [ ] **La demora está en 12–18 segundos, no en 60–120.** Bajada para poder
   testear. Antes de producción vuelve a `DEMORA_RESPUESTA_MIN_SEG=60` y
   `MAX=120`, que es lo que pidió el cliente.
