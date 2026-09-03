@@ -54,6 +54,21 @@ class Documento:
     puntaje: Puntaje = field(default=None)  # type: ignore[assignment]
 
 
+def _texto_de_la_tarea(
+    nombre: str,
+    telefono: str | None,
+    disponibilidad: str | None,
+    motivo_derivacion: str | None,
+) -> str:
+    """Lo unico que el asesor lee antes de decidir a quien atiende primero."""
+    quien = f"{nombre} ({telefono})" if telefono else nombre
+    if motivo_derivacion:
+        return f"ATENDER a {quien} — {motivo_derivacion}"
+    if disponibilidad:
+        return f"Llamar a {quien} — {disponibilidad}"
+    return f"Llamar a {quien}"
+
+
 def proxima_fecha_de_llamado(momento: datetime | None = None) -> date:
     """Cuándo tiene que llamar el vendedor.
 
@@ -166,6 +181,17 @@ async def armar(conversacion_id: int) -> Documento:
         puntaje = Puntaje(puntaje.score, puntaje.clasificacion, CONVERSANDO,
                           puntaje.desglose, "el agente todavía está conversando")
 
+    # El puntaje solo sabe que la conversacion esta derivada; por que lo esta
+    # —lo pidio la persona, se puso molesta, saltaron los limites de uso— quedo
+    # en el evento. Es lo primero que necesita leer quien la tome.
+    motivo_derivacion = None
+    if fila["estado"] == "derivada":
+        motivo_derivacion = await db.valor(
+            "SELECT detalle->>'motivo' FROM eventos WHERE conversacion_id = $1 "
+            "AND tipo = 'escalado_a_humano' ORDER BY id DESC LIMIT 1",
+            conversacion_id,
+        )
+
     presupuesto = _presupuesto(datos)
     nota = resumir(datos, puntaje, presupuesto) + "\n\n---\n\n" + await transcribir(conversacion_id)
 
@@ -199,12 +225,18 @@ async def armar(conversacion_id: int) -> Documento:
             # La disponibilidad va en el texto, no solo en un campo del lead: la
             # lista de tareas es lo unico que el asesor mira antes de marcar, y
             # "hoy en una hora" cambia a que hora levanta el telefono.
-            "texto": (
-                f"Llamar a {nombre}"
-                + (f" ({fila['telefono']})" if fila["telefono"] else "")
-                + (f" — {datos['disponibilidad']}" if datos.get("disponibilidad") else "")
+            #
+            # Una derivacion es otra cosa: no es "llamar cuando le quede comodo",
+            # es alguien esperando ahora. Kommo avisa al responsable cuando una
+            # tarea esta por vencer —campana, push al movil y mail—, y eso es lo
+            # unico que la API deja usar como notificacion: el centro de
+            # notificaciones de Kommo es JavaScript de widget, no un endpoint.
+            # Asi que la tarea urgente ES el aviso.
+            "texto": _texto_de_la_tarea(
+                nombre, fila["telefono"], datos.get("disponibilidad"), motivo_derivacion
             ),
             "vence": proxima_fecha_de_llamado(),
+            "urgente": motivo_derivacion is not None,
             "responsable": None,  # los 3 vendedores la ven; la toma el primero
         },
         puntaje=puntaje,

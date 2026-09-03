@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from app import db, webhook
 from app.config import Settings, obtener_settings
 from app.poller import Poller
+from app.crm.reintentos import Reintentos
 from app.worker import Worker
 
 logger = logging.getLogger(__name__)
@@ -65,10 +66,12 @@ async def ciclo_de_vida(app: FastAPI):
         logger.exception("no se pudo iniciar el pool de base")
 
     worker = Worker()
+    reintentos = Reintentos()
     poller: Poller | None = None
 
     if base_lista:
         worker.arrancar()
+        reintentos.arrancar()
 
         # El poller solo tiene sentido en desarrollo: en produccion Telegram
         # nos pega al webhook, que es ademas lo unico que soporta WhatsApp.
@@ -78,9 +81,12 @@ async def ciclo_de_vida(app: FastAPI):
         elif settings.telegram_modo == "polling":
             logger.warning("TELEGRAM_MODO=polling pero no hay TELEGRAM_BOT_TOKEN")
     else:
-        logger.error("sin base: el worker no arranca y no se procesan mensajes")
+        logger.error(
+            "sin base: no arrancan el worker ni los reintentos del CRM"
+        )
 
     app.state.worker = worker
+    app.state.reintentos = reintentos
     app.state.poller = poller
 
     try:
@@ -88,6 +94,7 @@ async def ciclo_de_vida(app: FastAPI):
     finally:
         if poller is not None:
             await poller.detener()
+        await reintentos.detener()
         await worker.detener()
         await db.cerrar()
         logger.info("pool de base cerrado")

@@ -139,5 +139,15 @@ class Kommo:
         }])
         return respuesta["_embedded"]["tasks"][0]["id"]
 
+    async def actualizar_tarea(self, id_tarea: int, cuerpo: dict) -> None:
+        """Adelantar una tarea que ya existe, en vez de crear una segunda.
+
+        Kommo avisa al responsable cuando una tarea esta por vencer —campana,
+        push al movil y mail—, asi que mover `complete_till` hacia adelante es
+        lo que dispara el aviso. Es la unica notificacion que la API deja
+        provocar: el centro de notificaciones es JavaScript de widget.
+        """
+        await self._pedir("PATCH", f"/tasks/{id_tarea}", cuerpo)
+
     async def cuenta(self) -> dict:
         return await self._pedir("GET", "/account")

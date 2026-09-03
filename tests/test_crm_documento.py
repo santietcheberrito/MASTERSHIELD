@@ -162,3 +162,36 @@ def test_el_fin_de_semana_se_llama_el_lunes(settings_de_prueba):
 def test_el_viernes_de_noche_se_llama_el_lunes(settings_de_prueba):
     viernes = datetime(2026, 8, 28, 23, 0, tzinfo=QUITO)
     assert documento.proxima_fecha_de_llamado(viernes).weekday() == 0
+
+
+# --- derivaciones -----------------------------------------------------------
+
+async def _derivar(conexion, id_conv, motivo):
+    await conexion.execute(
+        "UPDATE conversaciones SET estado = 'derivada' WHERE id = $1", id_conv)
+    await conexion.execute(
+        "INSERT INTO eventos (conversacion_id, tipo, estado, detalle) "
+        "VALUES ($1, 'escalado_a_humano', 'ok', $2::jsonb)",
+        id_conv, {"motivo": motivo},
+    )
+
+
+async def test_la_tarea_de_una_derivacion_dice_por_que(pool_en_transaccion):
+    """El puntaje solo sabe que está derivada. Por qué lo está quedó en el
+    evento, y es lo primero que necesita leer quien la tome."""
+    conexion = pool_en_transaccion
+    id_conv = await _conversacion(conexion, COMPLETO)
+    await _derivar(conexion, id_conv, "la persona pidió hablar con alguien")
+
+    doc = await documento.armar(id_conv)
+
+    assert doc.tarea["texto"].startswith("ATENDER")
+    assert "pidió hablar con alguien" in doc.tarea["texto"]
+    assert doc.tarea["urgente"] is True
+    assert doc.lead["etapa"] == scoring.DERIVADA
+
+
+async def test_una_calificacion_normal_no_es_urgente(pool_en_transaccion):
+    doc = await documento.armar(await _conversacion(pool_en_transaccion, COMPLETO))
+    assert doc.tarea["urgente"] is False
+    assert doc.tarea["texto"].startswith("Llamar a")

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from typing import Any
 
 from app.config import obtener_settings
@@ -64,12 +64,38 @@ def _valores_personalizados(documento: Documento) -> list[dict[str, Any]]:
     return valores
 
 
+# Cuanto se le da a una derivacion antes de que Kommo la marque vencida. Corto
+# a proposito: es lo que hace que suene la campana y llegue el push. Poner cero
+# no sirve —Kommo rechaza tareas que ya vencieron— y poner una hora la deja
+# indistinguible de las demas en la lista.
+MINUTOS_PARA_UNA_DERIVACION = 15
+
+
 def _vencimiento(documento: Documento) -> int:
-    """La tarea vence al final del dia de llamado, en hora de Ecuador."""
+    """Cuando vence la tarea, en hora de Ecuador.
+
+    Una tarea normal vence al final del dia de llamado. Una derivacion no: hay
+    alguien esperando ahora, y el vencimiento es lo unico que hace que Kommo
+    avise —campana, push al movil, mail al responsable—. No hay un endpoint de
+    notificaciones en la API: el centro de notificaciones de Kommo es
+    JavaScript que corre dentro de un widget.
+    """
     settings = obtener_settings()
+    ahora = datetime.now(settings.zona)
+
+    if documento.tarea.get("urgente"):
+        return int((ahora + timedelta(minutes=MINUTOS_PARA_UNA_DERIVACION)).timestamp())
+
     fecha = documento.tarea["vence"]
     _, fin = settings.horario
     momento = datetime.combine(fecha, fin or time(18, 0), tzinfo=settings.zona)
+
+    # Si el dia de llamado es hoy y el horario ya paso —una consulta que entra
+    # 19h30—, un timestamp en el pasado no le sirve a nadie: la tarea nace
+    # vencida y se pierde entre las atrasadas.
+    if momento <= ahora:
+        return int((ahora + timedelta(minutes=MINUTOS_PARA_UNA_DERIVACION)).timestamp())
+
     return int(momento.timestamp())
 
 
@@ -143,11 +169,26 @@ async def sincronizar(documento: Documento, referencia: dict | None = None) -> d
     # medias no genera tarea: llenar la lista de tareas de cosas que nadie va a
     # hacer es la forma mas rapida de que dejen de mirarla.
     id_tarea = referencia.get("tarea")
-    if not id_tarea and documento.puntaje.clasificacion in ("alta", "media", "baja"):
+    urgente = bool(documento.tarea.get("urgente"))
+
+    if not id_tarea and (
+        urgente or documento.puntaje.clasificacion in ("alta", "media", "baja")
+    ):
         id_tarea = await kommo.crear_tarea(
             id_lead, documento.tarea["texto"], _vencimiento(documento)
         )
-        logger.info("tarea de llamado creada | kommo_tarea=%s", id_tarea)
+        logger.info("tarea creada | kommo_tarea=%s urgente=%s", id_tarea, urgente)
+
+    # La conversacion se derivo despues de que ya hubiera una tarea de llamado
+    # agendada para el jueves. Esa tarea ya no representa lo que hay que hacer:
+    # hay alguien esperando ahora. Se adelanta en vez de crear una segunda, que
+    # dejaria al asesor con dos filas para la misma persona.
+    elif id_tarea and urgente:
+        await kommo.actualizar_tarea(
+            id_tarea,
+            {"text": documento.tarea["texto"], "complete_till": _vencimiento(documento)},
+        )
+        logger.info("tarea adelantada por derivacion | kommo_tarea=%s", id_tarea)
 
     return {"destino": "kommo", "contacto": id_contacto, "lead": id_lead,
             "tarea": id_tarea, "huella_nota": huella}

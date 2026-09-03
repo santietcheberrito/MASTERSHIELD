@@ -17,8 +17,22 @@ from app.kommo import sincronizacion as kommo
 
 logger = logging.getLogger(__name__)
 
-# Cuanto se espera antes de reintentar una sincronizacion fallida.
-ESPERA_REINTENTO = "30 minutes"
+# Cuanto se espera antes de cada reintento, por numero de intento. Arranca
+# corto porque la mayoria de las caidas de un CRM duran segundos, y se abre
+# rapido para no golpear una hora entera a algo que esta roto de verdad.
+ESPERAS_REINTENTO = (60, 300, 900, 3600, 21600)  # 1 min, 5, 15, 1 h, 6 h
+
+# Despues de esto se deja de reintentar. La fila queda pendiente con
+# `crm_reintentar_en` en NULL: no la toma nadie, pero sigue contada como
+# pendiente, que es lo que tiene que ver una metrica. Borrarla seria decir que
+# se sincronizo.
+MAX_REINTENTOS = len(ESPERAS_REINTENTO)
+
+
+def espera_del_intento(intentos: int) -> int:
+    """Segundos hasta el proximo reintento. `intentos` es el que acaba de fallar."""
+    indice = min(max(intentos, 1), len(ESPERAS_REINTENTO)) - 1
+    return ESPERAS_REINTENTO[indice]
 
 
 async def sincronizar(conversacion_id: int) -> bool:
@@ -124,15 +138,41 @@ def _destinos() -> dict:
 
 
 async def _marcar_pendiente(conversacion_id: int) -> None:
-    await db.ejecutar(
-        f"""
-        UPDATE conversaciones SET
-            crm_pendiente     = true,
-            crm_intentos      = crm_intentos + 1,
-            crm_reintentar_en = now() + interval '{ESPERA_REINTENTO}'
-        WHERE id = $1
-        """,
+    """Agenda el proximo reintento, o lo da por agotado.
+
+    Agotado no es lo mismo que resuelto: la fila queda `crm_pendiente` con
+    `crm_reintentar_en` en NULL, asi el loop no la vuelve a tomar pero sigue
+    contando como pendiente. Que una metrica la muestre es el unico modo de
+    enterarse de que un lead no llego al CRM.
+    """
+    intentos = await db.valor(
+        "UPDATE conversaciones SET crm_pendiente = true, "
+        "crm_intentos = crm_intentos + 1 WHERE id = $1 RETURNING crm_intentos",
         conversacion_id,
+    )
+
+    if intentos is not None and intentos >= MAX_REINTENTOS:
+        await db.ejecutar(
+            "UPDATE conversaciones SET crm_reintentar_en = NULL WHERE id = $1",
+            conversacion_id,
+        )
+        await db.ejecutar(
+            "INSERT INTO eventos (conversacion_id, tipo, estado, detalle) "
+            "VALUES ($1, 'crm_agotado', 'error', $2)",
+            conversacion_id,
+            {"intentos": intentos},
+        )
+        logger.error(
+            "el CRM no acepto la conversacion tras %s intentos, se deja de "
+            "reintentar | conversacion=%s", intentos, conversacion_id,
+        )
+        return
+
+    await db.ejecutar(
+        "UPDATE conversaciones SET crm_reintentar_en = now() + "
+        "make_interval(secs => $2) WHERE id = $1",
+        conversacion_id,
+        espera_del_intento(intentos or 1),
     )
 
 
