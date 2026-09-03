@@ -196,7 +196,14 @@ async def armar(conversacion_id: int) -> Documento:
         },
         nota=nota,
         tarea={
-            "texto": f"Llamar a {nombre}" + (f" ({fila['telefono']})" if fila["telefono"] else ""),
+            # La disponibilidad va en el texto, no solo en un campo del lead: la
+            # lista de tareas es lo unico que el asesor mira antes de marcar, y
+            # "hoy en una hora" cambia a que hora levanta el telefono.
+            "texto": (
+                f"Llamar a {nombre}"
+                + (f" ({fila['telefono']})" if fila["telefono"] else "")
+                + (f" — {datos['disponibilidad']}" if datos.get("disponibilidad") else "")
+            ),
             "vence": proxima_fecha_de_llamado(),
             "responsable": None,  # los 3 vendedores la ven; la toma el primero
         },

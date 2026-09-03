@@ -193,10 +193,28 @@ async def finalizar_calificacion(conversacion_id: int) -> dict[str, Any]:
     marca la conversacion y deja el evento para auditoria.
     """
     fila = await db.consultar_una(
-        "SELECT datos, telefono FROM conversaciones WHERE id = $1", conversacion_id
+        "SELECT datos, telefono, estado FROM conversaciones WHERE id = $1", conversacion_id
     )
     datos = (fila["datos"] if fila else None) or {}
     telefono = fila["telefono"] if fila else None
+
+    # Ya estaba cerrada. Pasa siempre igual: el agente cierra, manda la
+    # confirmacion, el cliente contesta "si, gracias" y el agente vuelve a
+    # llamar aca. Sin esto se sincronizaba de nuevo —dos notas identicas en el
+    # lead— y el mensaje de abajo lo hacia repetir la despedida entera, que es
+    # justo lo que el prompt le prohibe.
+    if fila and fila["estado"] == "calificada":
+        logger.info("ya estaba calificada, no se cierra de nuevo | conversacion=%s",
+                    conversacion_id)
+        return {
+            "finalizada": True,
+            "ya_estaba_cerrada": True,
+            "mensaje": (
+                "Esta conversacion ya se cerro y el asesor ya tiene los datos. "
+                "No repita la confirmacion ni el numero ni el horario: "
+                "despidase con una linea corta y nada mas."
+            ),
+        }
 
     linea = datos.get("linea")
     requeridos_por_linea = calificacion()["requeridos_por_linea"]

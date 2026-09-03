@@ -23,6 +23,11 @@ productos. Acá no lo son. **Nunca afirmar lo contrario de esto.**
 - **No enfría el ambiente.** Filtra energía solar excesiva, pero el calor sigue
   entrando —ya filtrado— y se acumula durante el día. La única forma de enfriar
   sería tapar y anular la ventana por completo.
+
+  Esto vale también para cómo se dice. Se **filtra** el calor que entra por el
+  vidrio; no se "baja el calor" ni se "reduce el calor" a secas, porque eso es
+  lo que la persona entiende como que va a hacer menos calor adentro, y después
+  el que da la cara es el asesor que va a la casa.
 - **No reduce el ruido exterior.** También depende de la estructura de la
   ventana.
 - **No evita que los vidrios se empañen por dentro.** Es el choque de

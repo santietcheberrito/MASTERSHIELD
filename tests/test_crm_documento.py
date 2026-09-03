@@ -78,6 +78,19 @@ async def test_la_tarea_no_tiene_responsable(pool_en_transaccion):
     assert "Maria Paez" in doc.tarea["texto"]
 
 
+async def test_la_tarea_dice_cuando_llamar(pool_en_transaccion):
+    """La lista de tareas es lo único que el asesor mira antes de marcar. Con la
+    franja enterrada en un campo del lead, "hoy en una hora" no la ve nadie."""
+    doc = await documento.armar(await _conversacion(pool_en_transaccion, COMPLETO))
+    assert "jueves por la mañana" in doc.tarea["texto"]
+
+
+async def test_sin_disponibilidad_la_tarea_no_queda_colgada(pool_en_transaccion):
+    datos = {k: v for k, v in COMPLETO.items() if k != "disponibilidad"}
+    doc = await documento.armar(await _conversacion(pool_en_transaccion, datos))
+    assert doc.tarea["texto"].rstrip().endswith(")")
+
+
 async def test_una_consulta_de_afuera_no_lleva_presupuesto(pool_en_transaccion):
     doc = await documento.armar(
         await _conversacion(pool_en_transaccion, {**COMPLETO, "zona": "fuera_del_pais"})

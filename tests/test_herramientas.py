@@ -354,3 +354,26 @@ async def test_el_texto_libre_no_conserva_saltos_de_linea(pool_en_transaccion):
     )
     assert "\n" not in r["valor"]
     assert r["valor"].startswith("el jueves")
+
+
+async def test_cerrar_dos_veces_no_vuelve_a_sincronizar(pool_en_transaccion):
+    """El agente cierra, manda la confirmación, el cliente contesta "sí,
+    gracias" y el agente vuelve a llamar. Sin idempotencia eso dejaba dos notas
+    idénticas en el lead y le hacía repetir la despedida entera."""
+    conexion = pool_en_transaccion
+    id_conv = await _conversacion(conexion, COMPLETO)
+
+    primera = await herramientas.finalizar_calificacion(id_conv)
+    segunda = await herramientas.finalizar_calificacion(id_conv)
+
+    assert primera.get("ya_estaba_cerrada") is None
+    assert segunda["finalizada"] is True
+    assert segunda["ya_estaba_cerrada"] is True
+    assert "No repita" in segunda["mensaje"]
+
+    # Un solo cierre registrado: el segundo no vuelve a pasar por el CRM.
+    assert await conexion.fetchval(
+        "SELECT count(*) FROM eventos WHERE conversacion_id = $1 "
+        "AND tipo = 'calificacion_finalizada'",
+        id_conv,
+    ) == 1
