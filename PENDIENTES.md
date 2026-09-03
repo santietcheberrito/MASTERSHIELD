@@ -215,7 +215,14 @@ primer mensaje, este es el primer parámetro a mirar.
   6 h y un tope de cinco intentos. Agotado no es resuelto: la fila queda
   pendiente con `crm_reintentar_en` en NULL, fuera del loop pero contada.
 - [x] **El aviso de que alguien necesita una persona.** Vía tarea urgente en
-  Kommo, que es la única notificación que su API deja provocar.
+  Kommo, que es la única notificación que su API deja provocar. **Verificado de
+  punta a punta el 3/9/2026**: una derivación de prueba llegó como mail al
+  responsable de la tarea. El push al móvil y la campana usan el mismo
+  mecanismo.
+- [ ] **A quién se le asigna la tarea en la cuenta de MasterShield.** Hoy la
+  notificación llega al dueño del token, que somos nosotros. Es el mismo
+  pendiente de la sección Kommo, y hasta resolverlo el aviso funciona pero le
+  suena a la persona equivocada.
 - [x] **La pausa por intervención humana**, con vencimiento de 6 horas y
   razonamiento al despertar.
 - [ ] **Confirmar cómo van a trabajar los vendedores de MasterShield.**
