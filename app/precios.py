@@ -192,13 +192,25 @@ def informar_precios(
     # teniendo que sostenerlo o desdecirse delante del cliente.
     especial_vigente = _especial_vigente(cfg, hoy)
 
+    # El recargo de provincias entra en el precio, no va como dato suelto.
+    # Devolverlo aparte obligaba a sumarlo a quien lea la respuesta, y el agente
+    # tiene prohibido hacer cuentas: dijo 37 en Guayaquil cuando son 47, y el
+    # control de precios lo dejo pasar porque 37 si venia de aca. El precio por
+    # m2 de una zona ES con su recargo.
+    recargo = (datos_zona or {}).get("recargo_m2", 0) or 0
+
+    def _con_recargo(valor):
+        return None if valor is None else round(valor + recargo, 2)
+
     # Seguridad no tiene precio normal ni especial sino un piso —`precio_desde`—
     # porque el nivel lo define un asesor. Es la misma forma con otro nombre.
     calidades = [
         Calidad(
             garantia_anios=o["garantia_anios"],
-            precio_normal=o.get("precio_normal", o.get("precio_desde")),
-            precio_especial=o.get("precio_especial") if especial_vigente else None,
+            precio_normal=_con_recargo(o.get("precio_normal", o.get("precio_desde"))),
+            precio_especial=_con_recargo(
+                o.get("precio_especial") if especial_vigente else None
+            ),
             vida_util_anios=o.get("vida_util_anios"),
         )
         for o in producto.get("opciones") or []
@@ -211,7 +223,9 @@ def informar_precios(
         zona=zona or "",
         tipo=producto["cotizable"],
         calidades=calidades,
-        recargo_m2=(datos_zona or {}).get("recargo_m2", 0),
+        # Informativo: sirve para explicar por que en provincias es mas caro,
+        # no para sumarlo. Ya esta adentro del precio de cada calidad.
+        recargo_m2=recargo,
         minimo_m2=(datos_zona or {}).get("minimo_m2"),
         descuento_pago_contado=cfg.get("descuento_efectivo_transferencia"),
         incluye=list(cfg.get("incluye") or []),

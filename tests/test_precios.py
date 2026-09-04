@@ -230,3 +230,33 @@ def test_sin_vigencia_declarada_no_hay_promocion():
     quedarse corto y que el asesor tenga que subir el número es peor."""
     assert precios._especial_vigente({}, date(2026, 9, 15)) is False
     assert precios._especial_vigente({"vigencia_precio_especial": None}) is False
+
+
+# --- el recargo de provincias va dentro del precio --------------------------
+
+def test_en_provincias_el_precio_por_metro_ya_trae_el_recargo():
+    """Devolverlo aparte obligaba a sumarlo a quien leyera la respuesta, y el
+    agente tiene prohibido hacer cuentas: le dijo 37 a un cliente de Guayaquil
+    cuando son 47, y el control de precios lo dejó pasar porque 37 sí venía de
+    la herramienta."""
+    quito = precios.informar_precios(CONTROL_SOLAR, QUITO, hoy=SIN_PROMO)
+    otra = precios.informar_precios(CONTROL_SOLAR, OTRA, hoy=SIN_PROMO)
+
+    de_quito = {c.garantia_anios: c.precio_normal for c in quito.calidades}
+    de_otra = {c.garantia_anios: c.precio_normal for c in otra.calidades}
+
+    assert de_quito == {10: 42, 5: 32}
+    assert de_otra == {10: 52, 5: 42}, "los 10 dólares de recargo ya están adentro"
+
+
+def test_el_recargo_tambien_entra_en_el_precio_de_promocion():
+    otra = precios.informar_precios(CONTROL_SOLAR, OTRA, hoy=date(2026, 9, 15))
+    especiales = {c.garantia_anios: c.precio_especial for c in otra.calidades}
+    assert especiales == {10: 47, 5: 35}
+
+
+def test_el_minimo_de_provincias_viaja_con_el_precio():
+    """Es cuatro veces el de Quito y decide si la persona es cliente."""
+    otra = precios.informar_precios(CONTROL_SOLAR, OTRA)
+    assert otra.minimo_m2 == 20
+    assert precios.informar_precios(CONTROL_SOLAR, QUITO).minimo_m2 == 5

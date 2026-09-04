@@ -221,13 +221,48 @@ async def finalizar_calificacion(conversacion_id: int) -> dict[str, Any]:
     datos = (fila["datos"] if fila else None) or {}
     telefono = fila["telefono"] if fila else None
 
-    # Ya estaba cerrada. Pasa siempre igual: el agente cierra, manda la
-    # confirmacion, el cliente contesta "si, gracias" y el agente vuelve a
-    # llamar aca. Sin esto se sincronizaba de nuevo —dos notas identicas en el
-    # lead— y el mensaje de abajo lo hacia repetir la despedida entera, que es
-    # justo lo que el prompt le prohibe.
-    if fila and fila["estado"] == "calificada":
-        logger.info("ya estaba calificada, no se cierra de nuevo | conversacion=%s",
+    # Ya se cerro antes. Se pregunta por el evento y no por el estado: una
+    # conversacion `calificada` que recibe un mensaje vuelve a `activa` —tiene
+    # que hacerlo, o el cliente que pregunta algo despues se queda sin
+    # respuesta— y entonces el estado deja de servir como marca. Pasa siempre:
+    # el agente cierra, el cliente dice "gracias", y al turno siguiente el
+    # agente cerraba de nuevo, con su nota duplicada en el lead.
+    ya_cerrada = await db.valor(
+        "SELECT detalle->'datos' FROM eventos WHERE conversacion_id = $1 "
+        "AND tipo = 'calificacion_finalizada' ORDER BY id DESC LIMIT 1",
+        conversacion_id,
+    )
+
+    if ya_cerrada is not None:
+        # Si la persona siguio hablando y cambio algo —otro horario, mas
+        # metros— el CRM tiene que enterarse: el vendedor va a llamar con eso.
+        # Lo que no se repite nunca es la despedida.
+        if ya_cerrada != datos:
+            logger.info("la calificacion cambio despues de cerrada, se actualiza "
+                        "el CRM | conversacion=%s", conversacion_id)
+            await db.ejecutar(
+                "UPDATE conversaciones SET estado = 'calificada' WHERE id = $1",
+                conversacion_id,
+            )
+            await db.ejecutar(
+                "INSERT INTO eventos (conversacion_id, tipo, estado, detalle) "
+                "VALUES ($1, 'calificacion_finalizada', 'ok', $2)",
+                conversacion_id,
+                {"datos": datos, "actualizacion": True},
+            )
+            await sincronizar(conversacion_id)
+            return {
+                "finalizada": True,
+                "ya_estaba_cerrada": True,
+                "datos_actualizados": True,
+                "mensaje": (
+                    "Ya estaba cerrada y el dato nuevo se le paso al asesor. "
+                    "Confirme solo lo que cambio, en una linea. No repita el "
+                    "numero ni el horario ni la despedida entera."
+                ),
+            }
+
+        logger.info("ya estaba calificada y sin cambios | conversacion=%s",
                     conversacion_id)
         return {
             "finalizada": True,

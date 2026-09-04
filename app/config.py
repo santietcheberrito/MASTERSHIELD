@@ -104,7 +104,10 @@ class Settings(BaseSettings):
     # gpt-5: 1.25 USD por millon de tokens de entrada contra 3 de Sonnet, y 90%
     # de descuento sobre el prefijo cacheado, que es lo que este diseño explota.
     modelo_agente: str = "gpt-5"
-    max_iteraciones_herramientas: int = Field(default=6, gt=0, le=20)
+    # Cada dato que el agente guarda consume una vuelta, y alguien que dice
+    # "es para mi oficina, estoy en Guayaquil" deja cinco datos de golpe. Con
+    # seis, ese turno se quedaba sin texto y la persona no recibia nada.
+    max_iteraciones_herramientas: int = Field(default=10, gt=0, le=20)
 
     # Cuanto se calla el agente despues de que un vendedor escribio a mano. Cada
     # mensaje del vendedor lo renueva. Termina solo porque `pausada` sin

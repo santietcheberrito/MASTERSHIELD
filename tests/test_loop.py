@@ -376,3 +376,40 @@ async def test_sin_asesor_no_se_inyecta_ese_contexto(
     await loop.responder(id_conv)
 
     assert "Un asesor MS estuvo" not in vistos["sistema"]
+
+
+@pytest.mark.db
+async def test_si_se_agotan_las_iteraciones_igual_se_contesta(
+    pool_en_transaccion, monkeypatch, settings_de_prueba
+):
+    """Alguien que dice "es para mi oficina, estoy en Guayaquil" deja cinco
+    datos de golpe, y cada uno consume una vuelta. Sin esto el turno se quedaba
+    sin texto: la persona escribió y no le contestó nadie."""
+    conexion = pool_en_transaccion
+    id_conv = await _conversacion(conexion)
+    await _mensaje(conexion, id_conv, "cliente", "es para mi oficina, estoy en Guayaquil")
+
+    # Siempre llama herramientas, nunca escribe: agota el tope.
+    guardando = [
+        Salida(llamadas=[Llamada(f"t{n}", "guardar_dato",
+                                 {"campo": "aplicacion", "valor": "oficina"})])
+        for n in range(20)
+    ]
+    proveedor = _ProveedorFalso(guardando)
+    sin_herramientas = {}
+
+    completar_real = proveedor.completar
+
+    async def _completar(mensajes, herramientas):
+        if not herramientas:
+            sin_herramientas["si"] = True
+            return Salida(texto="En Guayaquil el metro está en 47 más IVA.")
+        return await completar_real(mensajes, herramientas)
+
+    monkeypatch.setattr(proveedor, "completar", _completar)
+    monkeypatch.setattr(loop, "_cliente", lambda: proveedor)
+
+    r = await loop.responder(id_conv)
+
+    assert sin_herramientas.get("si"), "se pide la respuesta sin herramientas"
+    assert "47" in r.texto, "la persona recibe algo"

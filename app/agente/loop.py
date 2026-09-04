@@ -289,6 +289,31 @@ async def responder(conversacion_id: int) -> Respuesta:
     logger.warning(
         "se agotaron las iteraciones de herramientas | conversacion=%s", conversacion_id
     )
+
+    # Si se agotaron guardando datos, el turno se queda sin texto y la persona
+    # no recibe nada: escribio y no le contesto nadie. Pasa cuando alguien da
+    # varias cosas de golpe —"es para mi oficina, estoy en Guayaquil"— y cada
+    # dato consume una vuelta.
+    #
+    # Una llamada mas, sin herramientas, para que escriba la respuesta con todo
+    # lo que ya averiguo. Sin herramientas no puede volver a encadenar.
+    if not partes:
+        logger.warning(
+            "el turno se quedo sin texto: se pide la respuesta sin herramientas "
+            "| conversacion=%s", conversacion_id,
+        )
+        try:
+            salida = await proveedor.completar(mensajes, [])
+            respuesta.iteraciones += 1
+            respuesta.tokens_entrada += salida.tokens_entrada
+            respuesta.tokens_salida += salida.tokens_salida
+            respuesta.tokens_cache_leidos += salida.tokens_cache
+            if salida.texto:
+                partes.append(salida.texto)
+        except Exception:
+            logger.exception("tampoco se pudo cerrar el turno | conversacion=%s",
+                             conversacion_id)
+
     respuesta.texto = "\n".join(partes)
     await _sacar_saludo(respuesta, conversacion_id)
     await _verificar_precios(respuesta, conversacion_id, montos_autorizados)

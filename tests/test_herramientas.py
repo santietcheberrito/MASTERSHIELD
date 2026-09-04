@@ -442,3 +442,45 @@ async def test_cerrar_dos_veces_no_vuelve_a_sincronizar(pool_en_transaccion):
         "AND tipo = 'calificacion_finalizada'",
         id_conv,
     ) == 1
+
+
+async def test_reabrir_la_conversacion_no_la_cierra_de_nuevo(pool_en_transaccion):
+    """El caso que se escapaba: el agente cierra, el cliente escribe "gracias",
+    y la ingesta devuelve la conversación a `activa` porque tiene que
+    atenderlo. Con la idempotencia mirando el estado, el turno siguiente
+    cerraba de nuevo y dejaba otra nota en el lead."""
+    conexion = pool_en_transaccion
+    id_conv = await _conversacion(conexion, COMPLETO)
+
+    await herramientas.finalizar_calificacion(id_conv)
+    # La ingesta la reabre al llegar un mensaje nuevo.
+    await conexion.execute(
+        "UPDATE conversaciones SET estado = 'activa' WHERE id = $1", id_conv)
+
+    segunda = await herramientas.finalizar_calificacion(id_conv)
+
+    assert segunda["ya_estaba_cerrada"] is True
+    assert segunda.get("datos_actualizados") is None
+    assert await conexion.fetchval(
+        "SELECT count(*) FROM eventos WHERE conversacion_id = $1 "
+        "AND tipo = 'calificacion_finalizada'", id_conv,
+    ) == 1, "un solo cierre registrado"
+
+
+async def test_si_cambio_un_dato_despues_de_cerrar_el_crm_se_entera(pool_en_transaccion):
+    """No alcanza con callarse: si la persona corrige el horario después de que
+    cerramos, el vendedor va a llamar con el dato viejo."""
+    conexion = pool_en_transaccion
+    id_conv = await _conversacion(conexion, COMPLETO)
+
+    await herramientas.finalizar_calificacion(id_conv)
+    await conexion.execute(
+        "UPDATE conversaciones SET estado = 'activa' WHERE id = $1", id_conv)
+    await herramientas.guardar_dato(id_conv, "disponibilidad", "mejor el viernes")
+
+    segunda = await herramientas.finalizar_calificacion(id_conv)
+
+    assert segunda["datos_actualizados"] is True
+    assert "solo lo que cambio" in segunda["mensaje"]
+    assert await conexion.fetchval(
+        "SELECT estado FROM conversaciones WHERE id = $1", id_conv) == "calificada"
