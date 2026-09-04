@@ -8,6 +8,14 @@ from app.canales.base import MensajeEntrante
 pytestmark = [pytest.mark.db, pytest.mark.usefixtures("settings_de_prueba")]
 
 
+# Los conteos de estos tests filtran por sus propias conversaciones. Contar la
+# tabla entera parece mas simple, pero con el agente corriendo en vivo sobre la
+# misma base cualquier conversacion real se suma al total y el test falla sin
+# que haya nada roto. Ya paso: la suite marco ocho fallos que eran una persona
+# escribiendole al agente por WhatsApp.
+IDENTIFICADORES_DEL_TEST = ["7", "99", "555001", "+5490000000001", "+593999123456"]
+
+
 def mensaje(n: int = 1, chat: str = "7", **extra) -> MensajeEntrante:
     datos = {
         "canal": "telegram",
@@ -92,7 +100,8 @@ async def test_tres_mensajes_seguidos_son_una_sola_pendiente(pool_en_transaccion
     assert await conexion.fetchval(
         "SELECT count(*) FROM mensajes WHERE conversacion_id = $1", conv["id"]
     ) == 3
-    assert await conexion.fetchval("SELECT count(*) FROM pendientes") == 1
+    assert await conexion.fetchval(
+        "SELECT count(*) FROM pendientes p JOIN conversaciones c ON c.id = p.conversacion_id WHERE c.identificador = ANY($1::text[])", IDENTIFICADORES_DEL_TEST) == 1
 
 
 async def test_cada_mensaje_corre_la_ventana(pool_en_transaccion):
@@ -168,7 +177,8 @@ async def test_si_un_humano_atiende_se_guarda_pero_no_se_agenda(pool_en_transacc
     assert await conexion.fetchval(
         "SELECT count(*) FROM mensajes WHERE conversacion_id = $1", conv["id"]
     ) == 2
-    assert await conexion.fetchval("SELECT count(*) FROM pendientes") == 0
+    assert await conexion.fetchval(
+        "SELECT count(*) FROM pendientes p JOIN conversaciones c ON c.id = p.conversacion_id WHERE c.identificador = ANY($1::text[])", IDENTIFICADORES_DEL_TEST) == 0
     assert (await conversacion_de(conexion))["estado"] == estado
 
 

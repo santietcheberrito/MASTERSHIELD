@@ -31,6 +31,11 @@ logger = logging.getLogger(__name__)
 # herramientas) y menor que la paciencia de una persona esperando respuesta.
 LOCK_SEGUNDOS = 120
 
+# Cuanto se espera despues de enviar un mensaje antes de volver a encender el
+# indicador de "escribiendo". Medido contra la API real: el envio apaga el
+# indicador, y las dos ordenes salen tan juntas que el apagado gana.
+RESPIRO_ANTES_DEL_INDICADOR = 1.2
+
 # Un turno que falla se reintenta, pero no para siempre: despues de esto se
 # posterga una hora para no gastar el loop en algo que esta roto.
 MAX_INTENTOS = 3
@@ -79,6 +84,15 @@ _MARCAR_PROCESADOS = """
 _BORRAR_PENDIENTE = """
     DELETE FROM pendientes
     WHERE conversacion_id = $1 AND procesar_despues <= $2
+"""
+
+# Un mensaje del cliente posterior a los que entraron en este turno. Es lo que
+# convierte a la respuesta en vieja: fue escrita sin saber lo que la persona
+# acababa de decir.
+_LLEGO_ALGO_NUEVO = """
+    SELECT 1 FROM mensajes
+    WHERE conversacion_id = $1 AND rol = 'cliente' AND id > $2
+    LIMIT 1
 """
 
 _LIBERAR = """
@@ -252,17 +266,69 @@ async def procesar_turno(turno: Turno) -> None:
     await _enviar_partes(turno, humanizacion.partir(respuesta.texto))
 
 
+async def _quedo_vieja(turno: Turno) -> bool:
+    """Si el cliente escribio algo despues de que se armo este turno.
+
+    Mandar el resto de una respuesta escrita sin saber lo que la persona acaba
+    de decir es peor que no mandar nada: contesta a una conversacion que ya
+    cambio, y en la practica termina preguntando dos veces lo mismo.
+
+    Ante un error de base se sigue enviando: cortar por una consulta que fallo
+    dejaria a la persona sin respuesta por un problema nuestro.
+    """
+    try:
+        return bool(await db.valor(_LLEGO_ALGO_NUEVO, turno.conversacion_id, turno.ultimo_id))
+    except Exception:
+        logger.exception("no se pudo comprobar si el turno quedo viejo")
+        return False
+
+
 async def _enviar_partes(turno: Turno, partes: list[str]) -> None:
-    """Manda los mensajes con sus pausas, como los mandaria una persona."""
+    """Manda los mensajes con sus pausas, como los mandaria una persona.
+
+    Se corta apenas la persona escribe algo nuevo: los mensajes que faltan
+    fueron escritos sin eso y el worker va a rehacer el turno completo. Antes
+    salian igual, y por eso el agente llegaba a preguntar dos veces lo mismo.
+    """
     logger.info(
         "enviando %s mensaje(s) | conversacion=%s", len(partes), turno.conversacion_id
     )
 
     for numero, parte in enumerate(partes, 1):
+        if await _quedo_vieja(turno):
+            logger.info(
+                "llego un mensaje nuevo: se descartan %s de %s mensaje(s) | "
+                "conversacion=%s", len(partes) - numero + 1, len(partes),
+                turno.conversacion_id,
+            )
+            return
+
         # "Escribiendo..." y despues la pausa: el indicador solo tiene sentido
         # mientras se supone que se esta tipeando, no durante toda la espera.
         espera = humanizacion.demora_de_escritura(parte)
+
+        # Enviar un mensaje apaga el indicador. Si el del mensaje siguiente se
+        # dispara en el mismo instante en que sale el anterior, Meta recibe
+        # "apagar" y "encender" casi juntos y el apagado se come al encendido:
+        # el segundo globo aparece sin aviso. Este respiro deja que el apagado
+        # se procese primero. Sale de la espera, no se suma, para que el ritmo
+        # de la conversacion no cambie.
+        if numero > 1:
+            respiro = min(RESPIRO_ANTES_DEL_INDICADOR, espera / 2)
+            await asyncio.sleep(respiro)
+            espera -= respiro
+
         await _mostrar_escribiendo(turno, espera, numero)
+
+        # Otra vez, ahora pegado al envio: la pausa dura varios segundos y es
+        # justo cuando la persona esta escribiendo. El chequeo de arriba evita
+        # gastar la pausa; este es el que de verdad frena el mensaje.
+        if await _quedo_vieja(turno):
+            logger.info(
+                "llego un mensaje durante la pausa: se descarta el mensaje %s "
+                "de %s | conversacion=%s", numero, len(partes), turno.conversacion_id,
+            )
+            return
 
         id_externo = await _enviar(turno, parte)
         await db.ejecutar(_GUARDAR_RESPUESTA, turno.conversacion_id, parte, id_externo)

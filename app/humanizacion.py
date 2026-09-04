@@ -32,8 +32,11 @@ CPS_MAX = 32
 # Es un rango y no un valor porque el piso lo toca casi todo mensaje corto, y
 # tres segundos exactos, mensaje tras mensaje, es un patron tan detectable como
 # contestar al instante.
-PAUSA_MIN = 3.0
-PAUSA_MIN_MAX = 4.5
+# El piso tiene que aguantar dos cosas: el respiro que se toma el worker antes
+# de encender el indicador (~1.2s) y que despues el indicador se vea. Con 3.5
+# quedan al menos 2.3 segundos de "escribiendo" visible.
+PAUSA_MIN = 3.5
+PAUSA_MIN_MAX = 5.0
 PAUSA_MAX = 7.0
 
 # Un mensaje mas largo que esto se parte aunque venga en una sola linea. El
@@ -43,7 +46,10 @@ LARGO_COMODO = 150
 # Nunca mas de esto: tres globos seguidos ya es mucho.
 MAX_PARTES = 3
 
-_FIN_DE_ORACION = re.compile(r"(?<=[.!?…])\s+")
+# El punto y coma cuenta como fin de oracion a proposito: el modelo lo usa para
+# encadenar dos ideas y asi esquiva el corte, dejando globos de 200 caracteres
+# donde deberia haber dos.
+_FIN_DE_ORACION = re.compile(r"(?<=[.!?…;])\s+")
 
 
 def demora_de_respuesta(minimo: int, maximo: int) -> int:

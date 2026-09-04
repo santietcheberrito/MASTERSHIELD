@@ -8,5 +8,5 @@
 # Una linea = un mensaje de WhatsApp. Las lineas que empiezan con # son
 # comentarios y las vacias se ignoran. Se puede editar sin tocar codigo.
 Hola 👋🏻 Bienvenido al chat de asesoría y ventas de MasterShield®.
-Nos da mucho gusto que quiera conocer más de nuestro servicio de instalación de laminados para vidrio 🥳
+Nos da mucho gusto que quiera conocer más de nuestro servicio de instalación de laminados para vidrio.
 ¿Con quién tengo el gusto?

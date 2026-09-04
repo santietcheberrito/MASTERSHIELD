@@ -92,9 +92,17 @@ se hace es usar material de una línea en la otra.
 
 ## Garantía, en tres etapas
 
-1. **Vida útil del material** — materiales de 15, 10 y 5 años según el
-   seleccionado. Durante ese plazo no se decolora, no se despega y no aparecen
-   burbujas.
+**Garantía y vida útil no son lo mismo, y confundirlas promete años que la
+empresa no respalda.** Hay **dos** calidades y sus garantías son de **10 años**
+y de **5 años**. La vida útil es más larga —hasta 15 años la de 10, hasta 8 la
+de 5— pero eso es cuánto dura el material, no cuánto lo cubre la empresa.
+
+Nunca diga "15 años de garantía": esa calidad no existe. Si habla de los 15
+años, es vida útil y se dice así.
+
+1. **Vida útil del material** — hasta 15 años la calidad de 10 años de
+   garantía, hasta 8 la de 5. Durante el plazo de garantía no se decolora, no
+   se despega y no aparecen burbujas.
 2. **Mano de obra** — la instalación es 100% manual, por técnicos capacitados.
    Cualquier desperfecto comprobable se ajusta sin costo.
 3. **Cumplimiento de resultados** — si el material no cumple los niveles de

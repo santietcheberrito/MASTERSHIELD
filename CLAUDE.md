@@ -347,7 +347,10 @@ Requisito central del proyecto. Reglas duras:
   partir del segundo mensaje.
 - **Supersesión obligatoria.** Si llega un mensaje del cliente mientras hay una
   respuesta esperando a ser enviada, esa respuesta se descarta y el turno se
-  rehace con todo. Incluso con 20 segundos de ventana esto pasa:
+  rehace con todo. El corte se comprueba antes de cada mensaje y otra vez
+  pegado al envío, porque la pausa entre globos dura varios segundos y es justo
+  cuando la persona está escribiendo. Incluso con 20 segundos de ventana esto
+  pasa:
   es lo que va a pasar seguido.
 - **Español de Ecuador. Trato de usted, nunca voseo ni tuteo.** Registro
   formal pero cálido, como el del documento de preguntas frecuentes del

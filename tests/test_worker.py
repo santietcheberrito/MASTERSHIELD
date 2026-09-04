@@ -6,6 +6,14 @@ from app import ingesta, worker
 from app.canales.base import MensajeEntrante
 
 
+# Los conteos de estos tests filtran por sus propias conversaciones. Contar la
+# tabla entera parece mas simple, pero con el agente corriendo en vivo sobre la
+# misma base cualquier conversacion real se suma al total y el test falla sin
+# que haya nada roto. Ya paso: la suite marco ocho fallos que eran una persona
+# escribiendole al agente por WhatsApp.
+IDENTIFICADORES_DEL_TEST = ["7", "99", "555001", "+5490000000001", "+593999123456"]
+
+
 def mensaje(n: int, chat: str = "7", texto: str | None = None, tipo: str = "texto"):
     return MensajeEntrante(
         canal="telegram",
@@ -103,7 +111,8 @@ async def test_tres_mensajes_seguidos_dan_un_solo_turno(pool_en_transaccion, tur
 
     assert len(turnos) == 1
     assert turnos[0].texto == "buenas\nnecesito lamina\npara una oficina en Cumbaya"
-    assert await conexion.fetchval("SELECT count(*) FROM pendientes") == 0
+    assert await conexion.fetchval(
+        "SELECT count(*) FROM pendientes p JOIN conversaciones c ON c.id = p.conversacion_id WHERE c.identificador = ANY($1::text[])", IDENTIFICADORES_DEL_TEST) == 0
     assert await conexion.fetchval(
         "SELECT count(*) FROM mensajes WHERE conversacion_id = $1 AND NOT procesado",
         await _id_conversacion(conexion),
@@ -188,7 +197,8 @@ async def test_los_pendientes_sobreviven_al_reinicio(pool_en_transaccion, turnos
     await ingesta.registrar(mensaje(2, texto="necesito lamina"), 6)
 
     # El proceso muere aca: nada se proceso, la pendiente sigue en la base.
-    assert await conexion.fetchval("SELECT count(*) FROM pendientes") == 1
+    assert await conexion.fetchval(
+        "SELECT count(*) FROM pendientes p JOIN conversaciones c ON c.id = p.conversacion_id WHERE c.identificador = ANY($1::text[])", IDENTIFICADORES_DEL_TEST) == 1
 
     await _vencer(conexion)
     assert await worker.Worker().una_vuelta() == 1  # otro Worker, otro proceso
@@ -284,7 +294,8 @@ async def test_pendiente_sin_mensajes_se_limpia(pool_en_transaccion, turnos):
     await worker.Worker().una_vuelta()
 
     assert turnos == []
-    assert await conexion.fetchval("SELECT count(*) FROM pendientes") == 0
+    assert await conexion.fetchval(
+        "SELECT count(*) FROM pendientes p JOIN conversaciones c ON c.id = p.conversacion_id WHERE c.identificador = ANY($1::text[])", IDENTIFICADORES_DEL_TEST) == 0
 
 
 # --- uso anómalo ------------------------------------------------------------
@@ -418,9 +429,10 @@ async def test_el_primer_turno_manda_la_bienvenida_y_no_llama_al_modelo(
     id_conv = await conexion.fetchval(
         "INSERT INTO conversaciones (canal, identificador) "
         "VALUES ('consola', 'bienvenida-test') RETURNING id")
-    await conexion.execute(
+    id_msg = await conexion.fetchval(
         "INSERT INTO mensajes (conversacion_id, rol, contenido, id_externo) "
-        "VALUES ($1, 'cliente', 'hola, busco algo para el sol', 'bt-1')", id_conv)
+        "VALUES ($1, 'cliente', 'hola, busco algo para el sol', 'bt-1') RETURNING id",
+        id_conv)
 
     enviados = []
 
@@ -436,9 +448,12 @@ async def test_el_primer_turno_manda_la_bienvenida_y_no_llama_al_modelo(
     monkeypatch.setattr(worker.humanizacion, "demora_de_escritura", lambda t: 0.0)
     monkeypatch.setattr(worker, "_mostrar_escribiendo", _sin_indicador)
 
+    # El id real y no uno inventado: `_quedo_vieja` compara contra el último
+    # mensaje del turno, y con un id menor leería al propio mensaje del cliente
+    # como si hubiera llegado después.
     turno = worker.Turno(
         conversacion_id=id_conv, texto="hola, busco algo para el sol",
-        ids_mensajes=[1], canal="consola", identificador="bienvenida-test",
+        ids_mensajes=[id_msg], canal="consola", identificador="bienvenida-test",
     )
     await worker.procesar_turno(turno)
 
@@ -446,4 +461,148 @@ async def test_el_primer_turno_manda_la_bienvenida_y_no_llama_al_modelo(
 
 
 async def _sin_indicador(turno, segundos, parte=1):
+    return None
+
+
+async def test_el_indicador_del_segundo_mensaje_se_enciende_despues_de_un_respiro():
+    """Enviar un mensaje apaga el indicador. Si el del siguiente se dispara en
+    el mismo instante en que sale el anterior, Meta recibe "apagar" y "encender"
+    casi juntos y el apagado gana: el segundo globo aparece sin aviso.
+
+    Medido contra la API real: el indicador funciona incluso sobre un mensaje ya
+    respondido, así que lo único que fallaba era el orden.
+    """
+    ordenes = []
+
+    async def _indicador(turno, segundos, parte=1):
+        ordenes.append(("indicador", parte, round(segundos, 1)))
+
+    async def _enviar(turno, texto):
+        ordenes.append(("enviar", texto))
+        return None
+
+    dormido = []
+
+    async def _dormir(s):
+        dormido.append(round(s, 1))
+
+    import app.worker as w
+    from unittest.mock import patch
+
+    turno = w.Turno(conversacion_id=1, texto="x", ids_mensajes=[1], canal="consola")
+    with patch.object(w, "_mostrar_escribiendo", _indicador), \
+         patch.object(w, "_enviar", _enviar), \
+         patch.object(w.db, "ejecutar", _sin_db), \
+         patch.object(w.humanizacion, "demora_de_escritura", lambda t: 4.0), \
+         patch.object(w.asyncio, "sleep", _dormir):
+        await w._enviar_partes(turno, ["uno", "dos", "tres"])
+
+    # El primero no espera: no hay nada que apagar todavía.
+    assert ordenes[0] == ("indicador", 1, 4.0)
+    # Los siguientes sí, y el respiro sale de la espera en vez de sumarse.
+    assert ordenes[2] == ("indicador", 2, 2.8)
+    assert ordenes[4] == ("indicador", 3, 2.8)
+    assert dormido == [w.RESPIRO_ANTES_DEL_INDICADOR] * 2
+
+
+async def _sin_db(*a, **k):
+    return None
+
+
+# --- supersesión: la respuesta que quedó vieja no sale ----------------------
+
+async def _conversacion_con_turno(conexion, cuantos_del_cliente=1):
+    """Una conversación con mensajes del cliente ya tomados por un turno."""
+    id_conv = await conexion.fetchval(
+        "INSERT INTO conversaciones (canal, identificador) "
+        "VALUES ('consola', 'supersesion') RETURNING id")
+    ids = []
+    for n in range(cuantos_del_cliente):
+        ids.append(await conexion.fetchval(
+            "INSERT INTO mensajes (conversacion_id, rol, contenido, id_externo) "
+            "VALUES ($1, 'cliente', $2, $3) RETURNING id",
+            id_conv, f"mensaje {n}", f"sup-{n}"))
+    return id_conv, worker.Turno(
+        conversacion_id=id_conv, texto="lo que sea", ids_mensajes=ids, canal="consola")
+
+
+@pytest.mark.db
+async def test_sin_mensajes_nuevos_la_respuesta_no_quedo_vieja(pool_en_transaccion):
+    _, turno = await _conversacion_con_turno(pool_en_transaccion)
+    assert await worker._quedo_vieja(turno) is False
+
+
+@pytest.mark.db
+async def test_un_mensaje_posterior_deja_vieja_la_respuesta(pool_en_transaccion):
+    conexion = pool_en_transaccion
+    id_conv, turno = await _conversacion_con_turno(conexion)
+    await conexion.execute(
+        "INSERT INTO mensajes (conversacion_id, rol, contenido, id_externo) "
+        "VALUES ($1, 'cliente', 'ah, y otra cosa', 'sup-nuevo')", id_conv)
+
+    assert await worker._quedo_vieja(turno) is True
+
+
+@pytest.mark.db
+async def test_una_respuesta_del_agente_no_deja_vieja_la_suya(pool_en_transaccion):
+    """Los mensajes que el agente va guardando mientras envía tienen id mayor.
+    Si contaran, se cortaría solo después del primer globo."""
+    conexion = pool_en_transaccion
+    id_conv, turno = await _conversacion_con_turno(conexion)
+    await conexion.execute(
+        "INSERT INTO mensajes (conversacion_id, rol, contenido, id_externo) "
+        "VALUES ($1, 'agente', 'primer globo', 'sup-agente')", id_conv)
+
+    assert await worker._quedo_vieja(turno) is False
+
+
+@pytest.mark.db
+async def test_se_cortan_los_mensajes_que_faltan(pool_en_transaccion, monkeypatch):
+    """El caso real: el cliente escribió mientras el agente mandaba sus globos.
+    Los que faltan fueron escritos sin eso, y salían igual — por eso el agente
+    llegó a preguntar dos veces la misma cosa."""
+    conexion = pool_en_transaccion
+    id_conv, turno = await _conversacion_con_turno(conexion)
+    enviados = []
+
+    async def _enviar(t, texto):
+        enviados.append(texto)
+        # Justo después del primero, la persona escribe algo nuevo.
+        if len(enviados) == 1:
+            await conexion.execute(
+                "INSERT INTO mensajes (conversacion_id, rol, contenido, id_externo) "
+                "VALUES ($1, 'cliente', 'ah, me olvidaba', 'sup-nuevo')", id_conv)
+        return None
+
+    monkeypatch.setattr(worker, "_enviar", _enviar)
+    monkeypatch.setattr(worker, "_mostrar_escribiendo", _sin_indicador)
+    monkeypatch.setattr(worker.humanizacion, "demora_de_escritura", lambda t: 0.0)
+    monkeypatch.setattr(worker.asyncio, "sleep", _sin_dormir)
+
+    await worker._enviar_partes(turno, ["uno", "dos", "tres"])
+
+    assert enviados == ["uno"], "los dos que faltaban ya no correspondían"
+
+
+@pytest.mark.db
+async def test_si_no_llega_nada_se_mandan_todos(pool_en_transaccion, monkeypatch):
+    conexion = pool_en_transaccion
+    _, turno = await _conversacion_con_turno(conexion)
+    enviados = []
+
+    async def _enviar(t, texto):
+        enviados.append(texto)
+        return None
+
+    monkeypatch.setattr(worker, "_enviar", _enviar)
+    monkeypatch.setattr(worker, "_mostrar_escribiendo", _sin_indicador)
+    monkeypatch.setattr(worker.humanizacion, "demora_de_escritura", lambda t: 0.0)
+    monkeypatch.setattr(worker.asyncio, "sleep", _sin_dormir)
+
+    await worker._enviar_partes(turno, ["uno", "dos", "tres"])
+
+    assert enviados == ["uno", "dos", "tres"]
+
+
+async def _sin_dormir(s):
     return None

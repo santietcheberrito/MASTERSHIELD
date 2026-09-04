@@ -152,10 +152,13 @@ Kommo es agregar un destino, no rehacer nada.
 - [ ] **`VENTANA_BUFFER_SEG` final.** Los 30s son una estimación con una sola
   persona probando. El número sale de las 20 conversaciones de prueba con el
   equipo del cliente.
-- [ ] **Supersesión de respuestas.** Pasa a ser obligatoria, no opcional: con
-  un retraso de 60–120s, que el cliente escriba mientras hay una respuesta
-  esperando es lo esperable, no un caso de borde. El worker ya detecta la
-  carrera y reencola; falta cancelar la respuesta en vuelo.
+- [x] **Supersesión de respuestas.** El worker ya detectaba la carrera y
+  reencolaba, pero los mensajes en vuelo salían igual. Se vio en una
+  conversación real: preguntó dos veces la ciudad, con dos redacciones
+  distintas, porque el cliente escribió dos segundos después de que se tomara
+  el turno. Ahora se comprueba antes de cada mensaje y otra vez pegado al
+  envío — la pausa entre globos dura varios segundos y es justo cuando la
+  persona está escribiendo.
 - [ ] **`/start` de Telegram** llega como un mensaje de texto cualquiera. El
   prompt de la sesión 4 tiene que tratarlo como saludo inicial y no responderlo
   literalmente.
@@ -253,6 +256,14 @@ primer mensaje, este es el primer parámetro a mirar.
 - [x] **Logging estructurado y métricas.** `app/registro.py` con structlog y
   `conversacion_id` atado a todo el turno; `GET /metricas` con las alertas en
   castellano. Los agotados del CRM ya son visibles.
+- [ ] **Base de datos aparte para los tests.** Hoy la suite corre contra la
+  misma base que el agente en vivo, y eso muerde de dos maneras. Los conteos ya
+  filtran por las conversaciones del propio test —sin eso, una persona
+  escribiéndole al agente marcaba ocho fallos que no existían—, pero
+  `worker.una_vuelta()` sigue tomando las conversaciones reales que encuentra:
+  **correr la suite mientras alguien usa el agente puede consumirle un turno**.
+  Hace falta `DATABASE_URL_TEST` y que `conftest.py` falle si coincide con la
+  de producción.
 - [ ] **Falta el deploy en Railway.** Al desplegar hay que poner
   `LOG_FORMATO=json` y apuntar el healthcheck a `/health`, no a `/metricas`.
 - [ ] **Falta que alguien mire `/metricas`.** El endpoint existe; lo que no hay
