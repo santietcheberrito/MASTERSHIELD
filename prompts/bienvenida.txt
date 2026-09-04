@@ -1,0 +1,12 @@
+# La bienvenida de MasterShield. Texto de marca: sale igual siempre.
+#
+# Vive aca y no en el prompt del agente porque un modelo que reproduce un texto
+# fijo lo reproduce casi siempre bien, y "casi" no alcanza para lo primero que
+# lee un cliente. Ya paso: con dos ejemplos parecidos en el prompt, una de cada
+# dos veces se comia la linea de bienvenida.
+#
+# Una linea = un mensaje de WhatsApp. Las lineas que empiezan con # son
+# comentarios y las vacias se ignoran. Se puede editar sin tocar codigo.
+Hola 👋🏻 Bienvenido al chat de asesoría y ventas de MasterShield®.
+Nos da mucho gusto que quiera conocer más de nuestro servicio de instalación de laminados para vidrio 🥳
+¿Con quién tengo el gusto?

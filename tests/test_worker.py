@@ -346,3 +346,104 @@ async def test_una_conversacion_normal_no_se_deriva(
         "SELECT estado FROM conversaciones WHERE id = $1",
         await _id_conversacion(conexion),
     ) == "activa"
+
+
+# --- la bienvenida no pasa por el modelo ------------------------------------
+
+def test_la_bienvenida_sale_del_archivo():
+    """Es texto de marca: MasterShield lo edita sin tocar código."""
+    mensajes = worker.bienvenida()
+    assert len(mensajes) >= 2
+    assert "MasterShield" in mensajes[0]
+    assert "gusto" in mensajes[-1].lower(), "la última pregunta el nombre"
+
+
+def test_la_bienvenida_no_trae_comentarios_ni_lineas_vacias():
+    assert all(m.strip() and not m.startswith("#") for m in worker.bienvenida())
+
+
+@pytest.mark.db
+async def test_una_conversacion_sin_respuestas_es_primer_turno(pool_en_transaccion):
+    conexion = pool_en_transaccion
+    id_conv = await conexion.fetchval(
+        "INSERT INTO conversaciones (canal, identificador) "
+        "VALUES ('consola', 'primer-turno') RETURNING id")
+    await conexion.execute(
+        "INSERT INTO mensajes (conversacion_id, rol, contenido, id_externo) "
+        "VALUES ($1, 'cliente', 'hola', 'pt-1')", id_conv)
+
+    assert await worker.es_primer_turno(id_conv) is True
+
+
+@pytest.mark.db
+async def test_si_el_agente_ya_hablo_no_es_primer_turno(pool_en_transaccion):
+    """Una conversación reabierta después de meses ya fue saludada: saludarla de
+    nuevo la trataría como si fuera la primera vez."""
+    conexion = pool_en_transaccion
+    id_conv = await conexion.fetchval(
+        "INSERT INTO conversaciones (canal, identificador) "
+        "VALUES ('consola', 'primer-turno') RETURNING id")
+    for rol, texto, ext in [("cliente", "hola", "pt-1"), ("agente", "Bienvenido", "pt-2")]:
+        await conexion.execute(
+            "INSERT INTO mensajes (conversacion_id, rol, contenido, id_externo) "
+            "VALUES ($1, $2, $3, $4)", id_conv, rol, texto, ext)
+
+    assert await worker.es_primer_turno(id_conv) is False
+
+
+@pytest.mark.db
+async def test_un_mensaje_del_vendedor_tambien_cuenta_como_hablado(pool_en_transaccion):
+    """Si un asesor ya contestó a mano, la conversación está abierta: la
+    bienvenida llegaría después de que una persona real ya saludó."""
+    conexion = pool_en_transaccion
+    id_conv = await conexion.fetchval(
+        "INSERT INTO conversaciones (canal, identificador) "
+        "VALUES ('consola', 'primer-turno') RETURNING id")
+    for rol, texto, ext in [("cliente", "hola", "pt-1"), ("vendedor", "yo sigo", "pt-2")]:
+        await conexion.execute(
+            "INSERT INTO mensajes (conversacion_id, rol, contenido, id_externo) "
+            "VALUES ($1, $2, $3, $4)", id_conv, rol, texto, ext)
+
+    assert await worker.es_primer_turno(id_conv) is False
+
+
+@pytest.mark.db
+async def test_el_primer_turno_manda_la_bienvenida_y_no_llama_al_modelo(
+    pool_en_transaccion, monkeypatch, settings_de_prueba
+):
+    """La bienvenida es texto de marca y sale igual siempre. Cuando la escribía
+    el modelo, una de cada dos veces se comía la línea de bienvenida — y es lo
+    primero que lee un cliente."""
+    conexion = pool_en_transaccion
+    id_conv = await conexion.fetchval(
+        "INSERT INTO conversaciones (canal, identificador) "
+        "VALUES ('consola', 'bienvenida-test') RETURNING id")
+    await conexion.execute(
+        "INSERT INTO mensajes (conversacion_id, rol, contenido, id_externo) "
+        "VALUES ($1, 'cliente', 'hola, busco algo para el sol', 'bt-1')", id_conv)
+
+    enviados = []
+
+    async def _no_llamar(_):
+        raise AssertionError("el primer turno no puede gastar una llamada al modelo")
+
+    async def _enviar(turno, texto):
+        enviados.append(texto)
+        return None
+
+    monkeypatch.setattr(worker.loop, "responder", _no_llamar)
+    monkeypatch.setattr(worker, "_enviar", _enviar)
+    monkeypatch.setattr(worker.humanizacion, "demora_de_escritura", lambda t: 0.0)
+    monkeypatch.setattr(worker, "_mostrar_escribiendo", _sin_indicador)
+
+    turno = worker.Turno(
+        conversacion_id=id_conv, texto="hola, busco algo para el sol",
+        ids_mensajes=[1], canal="consola", identificador="bienvenida-test",
+    )
+    await worker.procesar_turno(turno)
+
+    assert enviados == worker.bienvenida(), "sale palabra por palabra, siempre igual"
+
+
+async def _sin_indicador(turno, segundos, parte=1):
+    return None

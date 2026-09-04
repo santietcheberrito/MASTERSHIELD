@@ -90,3 +90,19 @@ def test_la_demora_de_respuesta_varia():
 def test_las_pausas_entre_mensajes_varian():
     pausas = {round(humanizacion.demora_de_escritura("x" * 100), 3) for _ in range(30)}
     assert len(pausas) > 5
+
+
+def test_la_pausa_entre_mensajes_da_tiempo_a_que_se_vea_escribiendo():
+    """Con 1.5 segundos, Meta no alcanzaba a propagar el indicador y el segundo
+    y el tercer mensaje aparecían de la nada."""
+    assert all(
+        humanizacion.demora_de_escritura("¿Con quién tengo el gusto?") >= 3.0
+        for _ in range(50)
+    )
+
+
+def test_el_piso_de_la_pausa_no_es_siempre_el_mismo():
+    """Un mensaje corto siempre toca el piso. Si fuera fijo, cada saludo saldría
+    exactamente a los tres segundos, que es tan detectable como no esperar."""
+    medidas = {round(humanizacion.demora_de_escritura("dale"), 2) for _ in range(50)}
+    assert len(medidas) > 5, "el piso se sortea, no es una constante"

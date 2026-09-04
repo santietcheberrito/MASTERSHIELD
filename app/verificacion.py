@@ -70,3 +70,32 @@ def verificar(texto: str, autorizados: set[float]) -> tuple[bool, str]:
         return False, f"menciona {inventados}, calculados {sorted(autorizados)}"
 
     return True, ""
+
+
+# Un saludo abre una conversacion. Si aparece cuando la conversacion ya venia
+# hablada, la persona lo lee como si el agente hubiera perdido el hilo y
+# empezara de cero. El prompt lo prohibe; esto lo hace cierto.
+_SALUDO = re.compile(
+    r"^\s*(?:hola|buen[oa]s?\s*(?:d[ií]as?|tardes?|noches?)?|qu[eé]\s+tal|"
+    r"bienvenid[oa]s?)\b[\s,.!¡👋🏻🖐️✋]*",
+    re.IGNORECASE,
+)
+
+
+def saluda(texto: str) -> bool:
+    """Si el mensaje arranca saludando."""
+    return bool(_SALUDO.match(texto or ""))
+
+
+def sacar_saludo(texto: str) -> str:
+    """Le saca el saludo del principio y devuelve el resto.
+
+    Se corta el saludo en vez de descartar el mensaje entero: lo que sigue
+    suele ser una respuesta correcta, y tirarla dejaria a la persona esperando
+    por un problema de forma.
+    """
+    sin_saludo = _SALUDO.sub("", texto or "", count=1).lstrip()
+    if not sin_saludo:
+        return texto  # era solo el saludo: mejor eso que un mensaje vacio
+    # La primera letra puede haber quedado en minuscula al sacar "Hola, ".
+    return sin_saludo[0].upper() + sin_saludo[1:]

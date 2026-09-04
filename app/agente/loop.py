@@ -241,6 +241,7 @@ async def responder(conversacion_id: int) -> Respuesta:
             if salida.texto:
                 partes.append(salida.texto)
             respuesta.texto = "\n".join(partes)
+            await _sacar_saludo(respuesta, conversacion_id)
             await _verificar_precios(respuesta, conversacion_id, montos_autorizados)
             return respuesta
 
@@ -289,8 +290,35 @@ async def responder(conversacion_id: int) -> Respuesta:
         "se agotaron las iteraciones de herramientas | conversacion=%s", conversacion_id
     )
     respuesta.texto = "\n".join(partes)
+    await _sacar_saludo(respuesta, conversacion_id)
     await _verificar_precios(respuesta, conversacion_id, montos_autorizados)
     return respuesta
+
+
+async def _sacar_saludo(respuesta: Respuesta, conversacion_id: int) -> None:
+    """La bienvenida ya salio; un saludo aca reabre una conversacion en curso.
+
+    El prompt se lo prohibe, pero el modelo vuelve a modo apertura cuando la
+    conversacion gira —la persona pregunta algo nuevo, vuelve despues de un
+    rato— y ahi saluda de nuevo. Se le saca el saludo y se manda el resto, que
+    suele estar bien: descartar el mensaje entero dejaria a la persona esperando
+    por un problema de forma.
+    """
+    if not verificacion.saluda(respuesta.texto):
+        return
+
+    limpio = verificacion.sacar_saludo(respuesta.texto)
+    logger.warning(
+        "el agente saludo en medio de la conversacion | conversacion=%s | %r -> %r",
+        conversacion_id, respuesta.texto, limpio,
+    )
+    await db.ejecutar(
+        "INSERT INTO eventos (conversacion_id, tipo, estado, detalle) "
+        "VALUES ($1, 'saludo_fuera_de_lugar', 'error', $2)",
+        conversacion_id,
+        {"original": respuesta.texto[:500], "enviado": limpio[:500]},
+    )
+    respuesta.texto = limpio
 
 
 async def _verificar_precios(

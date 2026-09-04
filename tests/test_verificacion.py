@@ -80,3 +80,42 @@ def test_el_precio_por_metro_tambien_esta_autorizado():
 
 def test_el_mensaje_de_reemplazo_no_dice_ningun_numero():
     assert verificacion.montos_mencionados(verificacion.MENSAJE_SEGURO) == []
+
+
+# --- saludos fuera de lugar -------------------------------------------------
+
+@pytest.mark.parametrize("texto", [
+    "Hola, Santiago 👋🏻",
+    "Hola 👋🏻 Con gusto le ayudamos con eso.",
+    "Buenas tardes, gracias por escribir a MasterShield®.",
+    "Buenos días. Le cuento que el precio es por metro.",
+    "Bienvenido al chat de MasterShield®.",
+])
+def test_reconoce_un_saludo(texto):
+    assert verificacion.saluda(texto)
+
+
+@pytest.mark.parametrize("texto", [
+    "Perfecto, Santiago.",
+    "El llamado es para coordinar una visita técnica sin costo.",
+    "Con gusto le ayudamos con eso.",
+    "Holanda queda lejos, pero instalamos en todo Ecuador.",
+])
+def test_no_confunde_con_un_saludo(texto):
+    """Un falso positivo mutila un mensaje correcto, que es peor que dejar
+    pasar un saludo."""
+    assert not verificacion.saluda(texto)
+
+
+def test_sacar_el_saludo_deja_el_resto_utilizable():
+    """Se corta el saludo y se manda lo demás: descartar el mensaje entero
+    dejaría a la persona esperando por un problema de forma."""
+    assert verificacion.sacar_saludo(
+        "Hola 👋🏻 Con gusto le ayudamos con eso."
+    ) == "Con gusto le ayudamos con eso."
+
+
+def test_un_mensaje_que_es_solo_saludo_no_queda_vacio():
+    """Mandar un saludo de más es mejor que no mandar nada."""
+    assert verificacion.sacar_saludo("Hola") == "Hola"
+    assert verificacion.sacar_saludo("Buenas tardes") == "Buenas tardes"

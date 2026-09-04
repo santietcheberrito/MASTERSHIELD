@@ -21,9 +21,19 @@ import re
 
 # Velocidad de tipeo simulada, en caracteres por segundo. Una persona rapida en
 # el teclado del telefono anda por ahi.
-CPS_MIN = 25
-CPS_MAX = 40
-PAUSA_MIN = 1.5
+CPS_MIN = 20
+CPS_MAX = 32
+
+# El minimo no sale de cuanto tarda alguien en tipear: sale de cuanto tarda el
+# indicador de "escribiendo" en aparecer del otro lado. Con 1.5 segundos, Meta
+# no alcanzaba a propagarlo y el segundo y el tercer mensaje aparecian de la
+# nada, que es justo lo que el cliente pidio evitar. Tres segundos le dan
+# tiempo a mostrarse antes de que llegue el globo.
+# Es un rango y no un valor porque el piso lo toca casi todo mensaje corto, y
+# tres segundos exactos, mensaje tras mensaje, es un patron tan detectable como
+# contestar al instante.
+PAUSA_MIN = 3.0
+PAUSA_MIN_MAX = 4.5
 PAUSA_MAX = 7.0
 
 # Un mensaje mas largo que esto se parte aunque venga en una sola linea. El
@@ -57,9 +67,14 @@ def demora_configurada() -> int:
 
 
 def demora_de_escritura(texto: str) -> float:
-    """Cuanto tarda en 'escribir' un mensaje, segun su largo."""
+    """Cuanto tarda en 'escribir' un mensaje, segun su largo.
+
+    El piso se sortea: un mensaje corto siempre lo toca, y si fuera fijo, cada
+    "¿Con quien tengo el gusto?" saldria exactamente a los tres segundos.
+    """
     segundos = len(texto) / random.uniform(CPS_MIN, CPS_MAX)
-    return max(PAUSA_MIN, min(PAUSA_MAX, segundos))
+    piso = random.uniform(PAUSA_MIN, PAUSA_MIN_MAX)
+    return max(piso, min(PAUSA_MAX, segundos))
 
 
 def _partir_largo(parrafo: str) -> list[str]:

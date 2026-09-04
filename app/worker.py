@@ -11,6 +11,8 @@ la sesion 4.
 from __future__ import annotations
 
 import asyncio
+from functools import lru_cache
+from pathlib import Path
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -153,6 +155,39 @@ def armar_turno(conversacion_id: int, filas: list[asyncpg.Record]) -> Turno | No
     )
 
 
+BIENVENIDA = Path(__file__).resolve().parent.parent / "prompts" / "bienvenida.txt"
+
+
+@lru_cache
+def bienvenida() -> list[str]:
+    """Los mensajes de apertura, uno por linea del archivo.
+
+    Se lee una sola vez por proceso: cambiarla es editar el archivo y
+    reiniciar, igual que el prompt.
+    """
+    lineas = [
+        linea.strip()
+        for linea in BIENVENIDA.read_text(encoding="utf-8").splitlines()
+        if linea.strip() and not linea.lstrip().startswith("#")
+    ]
+    if not lineas:
+        raise RuntimeError(f"{BIENVENIDA} no tiene ningun mensaje")
+    return lineas
+
+
+async def es_primer_turno(conversacion_id: int) -> bool:
+    """Si el agente todavia no dijo nada en esta conversacion.
+
+    Se pregunta por los mensajes del agente y no por los del cliente: una
+    conversacion reabierta despues de meses ya fue saludada, y saludarla de
+    nuevo la trataria como si fuera la primera vez.
+    """
+    return not await db.valor(
+        "SELECT 1 FROM mensajes WHERE conversacion_id = $1 AND rol <> 'cliente' LIMIT 1",
+        conversacion_id,
+    )
+
+
 async def procesar_turno(turno: Turno) -> None:
     """Corre el agente y manda la respuesta como la mandaria una persona.
 
@@ -173,6 +208,18 @@ async def procesar_turno(turno: Turno) -> None:
     # porque el webhook tiene un presupuesto de 500ms que no conviene gastar en
     # una consulta mas.
     if await _uso_anomalo(turno):
+        return
+
+    # La bienvenida es texto de marca y sale igual siempre, asi que no pasa por
+    # el modelo. Con dos ejemplos parecidos en el prompt, una de cada dos veces
+    # se comia la linea de bienvenida, y es lo primero que lee un cliente.
+    #
+    # El primer turno se resuelve entero aca: saludar, presentar la empresa y
+    # preguntar el nombre. La consulta que la persona haya traido se contesta en
+    # el turno siguiente, que es el orden que pidio el cliente —en Ecuador se
+    # saluda antes de entrar en tema—. De paso, ahorra una llamada al modelo.
+    if await es_primer_turno(turno.conversacion_id):
+        await _enviar_partes(turno, bienvenida())
         return
 
     respuesta = await loop.responder(turno.conversacion_id)
@@ -202,7 +249,11 @@ async def procesar_turno(turno: Turno) -> None:
         logger.warning("el agente no produjo texto | conversacion=%s", turno.conversacion_id)
         return
 
-    partes = humanizacion.partir(respuesta.texto)
+    await _enviar_partes(turno, humanizacion.partir(respuesta.texto))
+
+
+async def _enviar_partes(turno: Turno, partes: list[str]) -> None:
+    """Manda los mensajes con sus pausas, como los mandaria una persona."""
     logger.info(
         "enviando %s mensaje(s) | conversacion=%s", len(partes), turno.conversacion_id
     )
