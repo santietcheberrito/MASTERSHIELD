@@ -5,7 +5,7 @@ cosa y la otra hay lugar para que un numero salga distinto: por un error del
 modelo, o porque alguien lo convencio de decir otra cosa. Esto es lo ultimo que
 pasa antes de enviar.
 
-La regla: si el mensaje menciona plata, `calcular_precio` tuvo que haberse
+La regla: si el mensaje menciona plata, `consultar_precio` tuvo que haberse
 llamado en este mismo turno y el numero tiene que coincidir. Repetir un precio
 de memoria no vale — hay que volver a calcularlo.
 """
@@ -54,15 +54,16 @@ def montos_mencionados(texto: str) -> list[float]:
 def verificar(texto: str, autorizados: set[float]) -> tuple[bool, str]:
     """Devuelve (esta_bien, motivo).
 
-    `autorizados` son los montos que `calcular_precio` devolvio en este turno:
-    el subtotal y el precio por m2.
+    `autorizados` son los precios por m2 que `consultar_precio` devolvio en
+    este turno. Un total no esta autorizado por nadie: el agente informa el
+    metro cuadrado y el calculo lo hace el asesor en la visita.
     """
     montos = montos_mencionados(texto)
     if not montos:
         return True, ""
 
     if not autorizados:
-        return False, f"menciona {montos} sin haber calculado ningun precio en el turno"
+        return False, f"menciona {montos} sin haber consultado ningun precio en el turno"
 
     inventados = [m for m in montos if m not in autorizados]
     if inventados:

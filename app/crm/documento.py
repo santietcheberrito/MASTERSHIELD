@@ -92,7 +92,15 @@ def proxima_fecha_de_llamado(momento: datetime | None = None) -> date:
 
 
 def _presupuesto(datos: dict[str, Any]) -> float | None:
-    """El monto que el agente le dijo al cliente, sin IVA."""
+    """Una estimacion del tamaño del trabajo, sin IVA. Para el vendedor, no
+    para el cliente.
+
+    El agente ya no calcula totales: informa el precio por metro y el calculo
+    lo hace el asesor en la visita, con las medidas exactas. Pero el vendedor
+    necesita saber a que se enfrenta antes de levantar el telefono —no es lo
+    mismo un trabajo de 10 m2 que uno de 200— y para eso el numero sigue
+    sirviendo. Es interno: nunca se le dice al cliente.
+    """
     id_producto = PRODUCTO_POR_OBJETIVO.get((datos.get("linea"), datos.get("objetivo")))
     if not id_producto:
         return None
@@ -211,7 +219,7 @@ async def armar(conversacion_id: int) -> Documento:
             "linea": LINEAS.get(datos.get("linea")),
             "producto": _producto(datos),
             "metros_cuadrados": datos.get("metros_cuadrados"),
-            "presupuesto": presupuesto,
+            "presupuesto": presupuesto,  # estimado interno, el cliente no lo escucho
             "garantia": f"{datos['garantia_anios']} años" if datos.get("garantia_anios") else None,
             "aplicacion": APLICACIONES.get(datos.get("aplicacion")),
             "urgencia": URGENCIAS.get(datos.get("urgencia")),

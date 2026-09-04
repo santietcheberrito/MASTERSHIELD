@@ -73,32 +73,82 @@ async def test_metros_invalidos(pool_en_transaccion, valor):
     assert "error" in await herramientas.guardar_dato(id_conv, "metros_cuadrados", valor)
 
 
-# --- calcular_precio --------------------------------------------------------
+# --- consultar_precio -------------------------------------------------------
 
-async def test_cotiza_con_lo_que_ya_esta_relevado(pool_en_transaccion):
+async def test_informa_el_precio_por_metro_de_las_dos_calidades(pool_en_transaccion):
+    """El cliente pidió que el agente diga cuánto vale el metro y nada más: el
+    cálculo lo hace el asesor en la visita, con las medidas exactas."""
+    id_conv = await _conversacion(
+        pool_en_transaccion,
+        {"linea": "arquitectonico", "objetivo": "control_solar",
+         "zona": "quito_y_valles", "metros_cuadrados": 20},
+    )
+
+    r = await herramientas.consultar_precio(id_conv)
+
+    assert r["puede_informar"] is True
+    precios = {c["garantia_anios"]: c for c in r["calidades"]}
+    assert precios[10]["precio_normal_m2_sin_iva"] == 42
+    assert precios[10]["precio_especial_m2_sin_iva"] == 37
+    assert precios[5]["precio_especial_m2_sin_iva"] == 25
+
+
+async def test_no_devuelve_ningun_total(pool_en_transaccion):
+    """Es el punto del cambio. Si devolviera un subtotal, el modelo lo diría."""
     id_conv = await _conversacion(
         pool_en_transaccion,
         {"linea": "arquitectonico", "objetivo": "control_solar",
          "zona": "quito_y_valles", "metros_cuadrados": 20, "garantia_anios": 10},
     )
-    r = await herramientas.calcular_precio(id_conv)
-    assert r["puede_cotizar"] is True
-    assert r["subtotal_sin_iva"] == 840
-    assert "mas IVA" in r["como_decirlo"]
+
+    r = await herramientas.consultar_precio(id_conv)
+
+    assert "subtotal_sin_iva" not in r
+    assert "subtotal" not in r
+    assert 840 not in _numeros(r), "20 m² por 42 no puede aparecer en ningún lado"
+    assert "NO multiplique" in r["como_decirlo"]
 
 
-async def test_se_puede_simular_otra_cantidad(pool_en_transaccion):
-    """Para responder "¿y si fueran 30 metros?" sin pisar lo guardado."""
-    conexion = pool_en_transaccion
+def _numeros(objeto) -> set[float]:
+    """Todos los números que hay adentro, a cualquier profundidad."""
+    encontrados: set[float] = set()
+    if isinstance(objeto, dict):
+        for v in objeto.values():
+            encontrados |= _numeros(v)
+    elif isinstance(objeto, (list, tuple)):
+        for v in objeto:
+            encontrados |= _numeros(v)
+    elif isinstance(objeto, (int, float)) and not isinstance(objeto, bool):
+        encontrados.add(float(objeto))
+    return encontrados
+
+
+async def test_no_hace_falta_saber_los_metros_para_dar_el_precio(pool_en_transaccion):
+    """Antes los metros eran obligatorios porque había que multiplicar. Ahora no:
+    alguien que sólo pregunta precios recibe respuesta enseguida."""
     id_conv = await _conversacion(
-        conexion,
-        {"linea": "arquitectonico", "objetivo": "control_solar",
-         "zona": "quito_y_valles", "metros_cuadrados": 20, "garantia_anios": 10},
+        pool_en_transaccion,
+        {"linea": "arquitectonico", "objetivo": "control_solar", "zona": "quito_y_valles"},
     )
-    r = await herramientas.calcular_precio(id_conv, metros_cuadrados=30)
-    assert r["subtotal_sin_iva"] == 42 * 30
-    guardado = await conexion.fetchval("SELECT datos FROM conversaciones WHERE id = $1", id_conv)
-    assert guardado["metros_cuadrados"] == 20, "simular no puede pisar lo relevado"
+
+    r = await herramientas.consultar_precio(id_conv)
+
+    assert r["puede_informar"] is True
+    assert len(r["calidades"]) == 2
+
+
+async def test_avisa_el_minimo_de_la_zona(pool_en_transaccion):
+    """En provincias el mínimo es cuatro veces más alto y decide si la persona
+    es cliente o no. Es lo primero que hay que decirle."""
+    id_conv = await _conversacion(
+        pool_en_transaccion,
+        {"linea": "arquitectonico", "objetivo": "control_solar", "zona": "otra_ciudad"},
+    )
+
+    r = await herramientas.consultar_precio(id_conv)
+
+    assert r["minimo_m2_de_la_zona"] == 20
+    assert r["recargo_m2_por_la_zona"] == 10
 
 
 async def test_bajo_el_minimo_sugiere_sumar_otro_sector(pool_en_transaccion):
@@ -106,12 +156,27 @@ async def test_bajo_el_minimo_sugiere_sumar_otro_sector(pool_en_transaccion):
     id_conv = await _conversacion(
         pool_en_transaccion,
         {"linea": "arquitectonico", "objetivo": "control_solar",
-         "zona": "quito_y_valles", "metros_cuadrados": 3, "garantia_anios": 10},
+         "zona": "quito_y_valles", "metros_cuadrados": 3},
     )
-    r = await herramientas.calcular_precio(id_conv)
-    assert r["puede_cotizar"] is False
-    assert r["minimo_m2"] == 5
+
+    r = await herramientas.consultar_precio(id_conv)
+
+    assert r["no_llega_al_minimo"] is True
+    assert r["minimo_m2_de_la_zona"] == 5
     assert "otro sector" in r["sugerencia"]
+
+
+async def test_seguridad_es_un_desde(pool_en_transaccion):
+    """A mayor espesor, mayor resistencia y mayor valor. El nivel lo define un
+    asesor, así que el agente da un piso y nunca un precio cerrado."""
+    id_conv = await _conversacion(
+        pool_en_transaccion,
+        {"linea": "arquitectonico", "objetivo": "seguridad", "zona": "quito_y_valles"},
+    )
+
+    r = await herramientas.consultar_precio(id_conv)
+
+    assert r["tipo"] == "desde"
 
 
 async def test_vehicular_no_cotiza(pool_en_transaccion):
@@ -119,8 +184,8 @@ async def test_vehicular_no_cotiza(pool_en_transaccion):
         pool_en_transaccion,
         {"linea": "vehicular", "objetivo": "seguridad", "zona": "quito_y_valles"},
     )
-    r = await herramientas.calcular_precio(id_conv)
-    assert r["puede_cotizar"] is False
+    r = await herramientas.consultar_precio(id_conv)
+    assert r["puede_informar"] is False
     assert r["falta"] == ["modelo_vehiculo"]
 
 
@@ -128,7 +193,7 @@ async def test_sin_objetivo_no_sabe_que_producto_es(pool_en_transaccion):
     id_conv = await _conversacion(
         pool_en_transaccion, {"linea": "arquitectonico", "zona": "quito_y_valles"}
     )
-    assert (await herramientas.calcular_precio(id_conv))["falta"] == ["objetivo"]
+    assert (await herramientas.consultar_precio(id_conv))["falta"] == ["objetivo"]
 
 
 # --- finalizar_calificacion -------------------------------------------------

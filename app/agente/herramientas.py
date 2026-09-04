@@ -16,7 +16,7 @@ from app import db
 from app.calificacion import calificacion
 from app.config import obtener_settings
 from app.crm.sincronizacion import sincronizar
-from app.precios import PRODUCTO_POR_OBJETIVO, cotizar, garantias_disponibles
+from app.precios import PRODUCTO_POR_OBJETIVO, informar_precios
 from app.telefono import normalizar
 
 logger = logging.getLogger(__name__)
@@ -83,17 +83,25 @@ async def guardar_dato(conversacion_id: int, campo: str, valor: Any) -> dict[str
                 valor,
             )
 
+    # El nombre sube igual que el telefono, y por la misma razon: es lo que
+    # Kommo usa para el contacto y para el titulo del lead. El del perfil de
+    # WhatsApp es un valor inicial —a veces un apodo, a veces el nombre de un
+    # negocio—; el que la persona dice cuando se le pregunta, gana.
+    nombre_dicho = str(valor) if campo == "nombre" else None
+
     datos = await db.valor(
         """
         UPDATE conversaciones SET
             datos    = datos || $2::jsonb,
-            telefono = COALESCE($3, telefono)
+            telefono = COALESCE($3, telefono),
+            nombre   = COALESCE($4, nombre)
         WHERE id = $1
         RETURNING datos
         """,
         conversacion_id,
         {campo: valor},
         normalizado,
+        nombre_dicho,
     )
     if datos is None:
         # El UPDATE no toco ninguna fila. Sin este chequeo la herramienta
@@ -109,77 +117,92 @@ async def guardar_dato(conversacion_id: int, campo: str, valor: Any) -> dict[str
 
 
 # ---------------------------------------------------------------------------
-# calcular_precio
+# consultar_precio
 # ---------------------------------------------------------------------------
 
 
 
-async def calcular_precio(
+async def consultar_precio(
     conversacion_id: int,
-    metros_cuadrados: float | None = None,
     zona: str | None = None,
-    garantia_anios: int | None = None,
 ) -> dict[str, Any]:
-    """Cotiza con lo que ya esta relevado, salvo que se pase algo distinto.
+    """Los precios por m2 del producto que el cliente necesita.
 
-    Los argumentos son opcionales a proposito: por defecto sale de
-    `conversaciones.datos`, para que el numero sea consistente con lo que el
-    cliente dijo. Pasarlos permite responder "¿y si fueran 30 metros?" sin
-    pisar lo guardado.
+    No hace cuentas y no da totales. El cliente pidio expresamente que el
+    agente informe cuanto vale el metro cuadrado y que el calculo lo haga el
+    asesor en la visita tecnica, donde ademas se toman las medidas exactas.
+
+    Los metros se siguen relevando: hacen falta para el minimo de instalacion y
+    para que el vendedor sepa el tamaño del trabajo antes de llamar.
     """
     datos = await db.valor("SELECT datos FROM conversaciones WHERE id = $1", conversacion_id) or {}
 
     linea = datos.get("linea")
     objetivo = datos.get("objetivo")
-    metros = metros_cuadrados if metros_cuadrados is not None else datos.get("metros_cuadrados")
     zona = zona or datos.get("zona")
-    garantia = garantia_anios if garantia_anios is not None else datos.get("garantia_anios")
 
     if not linea:
-        return {"puede_cotizar": False, "falta": ["linea"],
+        return {"puede_informar": False, "falta": ["linea"],
                 "mensaje": "todavia no se sabe si es arquitectonico o vehicular"}
 
     id_producto = PRODUCTO_POR_OBJETIVO.get((linea, objetivo))
     if id_producto is None:
-        return {"puede_cotizar": False, "falta": ["objetivo"],
+        return {"puede_informar": False, "falta": ["objetivo"],
                 "mensaje": "falta saber que necesita resolver: control solar, privacidad o seguridad"}
 
-    resultado = cotizar(id_producto, metros, zona, garantia)
+    r = informar_precios(id_producto, zona)
 
-    if not resultado.puede_cotizar:
+    if not r.puede_informar:
         respuesta: dict[str, Any] = {
-            "puede_cotizar": False,
-            "producto": resultado.producto,
-            "mensaje": resultado.motivo,
+            "puede_informar": False,
+            "producto": r.producto,
+            "mensaje": r.motivo,
         }
-        if resultado.datos_faltantes:
-            respuesta["falta"] = resultado.datos_faltantes
-        if resultado.minimo_m2 is not None:
-            respuesta["minimo_m2"] = resultado.minimo_m2
-            respuesta["metros_del_pedido"] = resultado.metros
+        if r.datos_faltantes:
+            respuesta["falta"] = r.datos_faltantes
+        return respuesta
+
+    calidades = [
+        {
+            "garantia_anios": c.garantia_anios,
+            "precio_normal_m2_sin_iva": c.precio_normal,
+            "precio_especial_m2_sin_iva": c.precio_especial,
+            "vida_util_anios": c.vida_util_anios,
+        }
+        for c in r.calidades
+    ]
+
+    respuesta = {
+        "puede_informar": True,
+        "producto": r.producto,
+        "tipo": r.tipo,  # "exacto" o "desde"
+        "calidades": calidades,
+        "descuento_pago_contado_pct": r.descuento_pago_contado,
+        "incluye": r.incluye,
+        "como_decirlo": (
+            "Son precios POR METRO CUADRADO y SIN IVA: se dicen con la frase "
+            "'mas IVA'. NO multiplique por los metros, NO de un total y NO le "
+            "sume el IVA. El calculo lo hace el asesor en la visita, con las "
+            "medidas exactas."
+        ),
+    }
+
+    # El minimo es lo primero que hay que decir en provincias, donde es cuatro
+    # veces mas alto y decide si la persona es cliente o no.
+    if r.minimo_m2 is not None:
+        respuesta["minimo_m2_de_la_zona"] = r.minimo_m2
+        metros = datos.get("metros_cuadrados")
+        if metros is not None and metros < r.minimo_m2:
+            respuesta["no_llega_al_minimo"] = True
+            respuesta["metros_del_pedido"] = metros
             respuesta["sugerencia"] = (
                 "preguntar si hay otro sector para sumar y llegar al minimo, "
                 "en vez de cortar la conversacion"
             )
-        if resultado.datos_faltantes == ["garantia_anios"]:
-            respuesta["garantias_disponibles"] = garantias_disponibles(id_producto)
-        return respuesta
+    if r.recargo_m2:
+        respuesta["recargo_m2_por_la_zona"] = r.recargo_m2
 
-    return {
-        "puede_cotizar": True,
-        "producto": resultado.producto,
-        "tipo": resultado.tipo,  # "exacto" o "desde"
-        "metros": resultado.metros,
-        "precio_m2_sin_iva": resultado.precio_m2,
-        "subtotal_sin_iva": resultado.subtotal,
-        "garantia_anios": resultado.garantia_anios,
-        "descuento_pago_contado_pct": resultado.descuento_pago_contado,
-        "incluye": resultado.incluye,
-        "como_decirlo": (
-            "El precio se dice SIN IVA, con la frase 'mas IVA'. "
-            "No sumarle el IVA ni calcular el total con impuestos."
-        ),
-    }
+    return respuesta
 
 
 # ---------------------------------------------------------------------------
@@ -371,26 +394,23 @@ def definiciones() -> list[dict[str, Any]]:
             },
         },
         {
-            "nombre": "calcular_precio",
+            "nombre": "consultar_precio",
             "descripcion": (
-                "Calcula el precio del trabajo. Usala SIEMPRE que haya que dar un "
-                "numero: nunca hagas la cuenta vos. Tambien aplica el minimo de venta "
-                "y te dice si el pedido no llega.\n\n"
-                "Por defecto usa lo que ya esta guardado de la conversacion. Pasa "
-                "argumentos solo para responder un supuesto ('¿y si fueran 30 metros?')."
+                "Te da el precio POR METRO CUADRADO del material que necesita el "
+                "cliente, con sus calidades. Usala SIEMPRE antes de mencionar "
+                "cualquier numero: no inventes precios ni los saques de memoria.\n\n"
+                "No calcula totales a proposito. Nunca multipliques por los metros "
+                "ni des un valor final: el calculo lo hace el asesor en la visita, "
+                "con las medidas exactas tomadas en el lugar."
             ),
             "esquema": {
                 "type": "object",
                 "properties": {
-                    "metros_cuadrados": {
-                        "type": "number",
-                        "description": "Solo para simular otra cantidad distinta a la guardada",
-                    },
                     "zona": {
                         "type": "string",
                         "enum": ["quito_y_valles", "otra_ciudad", "fuera_del_pais"],
+                        "description": "Solo si querés consultar por una zona distinta a la guardada",
                     },
-                    "garantia_anios": {"type": "integer", "enum": [10, 5]},
                 },
                 "required": [],
             },
@@ -455,13 +475,8 @@ async def ejecutar(nombre: str, conversacion_id: int, argumentos: dict[str, Any]
             return await guardar_dato(
                 conversacion_id, argumentos["campo"], argumentos["valor"]
             )
-        if nombre == "calcular_precio":
-            return await calcular_precio(
-                conversacion_id,
-                metros_cuadrados=argumentos.get("metros_cuadrados"),
-                zona=argumentos.get("zona"),
-                garantia_anios=argumentos.get("garantia_anios"),
-            )
+        if nombre == "consultar_precio":
+            return await consultar_precio(conversacion_id, zona=argumentos.get("zona"))
         if nombre == "finalizar_calificacion":
             return await finalizar_calificacion(conversacion_id)
         if nombre == "escalar_a_humano":

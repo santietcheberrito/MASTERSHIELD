@@ -225,7 +225,7 @@ async def responder(conversacion_id: int) -> Respuesta:
     # texto de la ultima vuelta, esa respuesta se pierde y al cliente le llega
     # unicamente la repregunta que vino despues de los resultados.
     partes: list[str] = []
-    # Los montos que devolvio calcular_precio en este turno. Son los unicos que
+    # Los precios por m2 que devolvio consultar_precio en este turno. Son los
     # el mensaje tiene permitido mencionar.
     montos_autorizados: set[float] = set()
 
@@ -259,11 +259,16 @@ async def responder(conversacion_id: int) -> Respuesta:
                 respuesta.silencio_deliberado = True
                 return respuesta
 
-            if llamada.nombre == "calcular_precio" and resultado.get("puede_cotizar"):
-                montos_autorizados.update(
-                    v for v in (resultado.get("subtotal_sin_iva"),
-                                resultado.get("precio_m2_sin_iva")) if v is not None
-                )
+            if llamada.nombre == "consultar_precio" and resultado.get("puede_informar"):
+                # Solo los precios por m2 que devolvio la herramienta. Un total
+                # ya no esta autorizado por nadie, que es exactamente lo que el
+                # cliente pidio: el agente informa el metro, no multiplica.
+                for calidad in resultado.get("calidades") or []:
+                    montos_autorizados.update(
+                        v for v in (calidad.get("precio_normal_m2_sin_iva"),
+                                    calidad.get("precio_especial_m2_sin_iva"))
+                        if v is not None
+                    )
             logger.info(
                 "herramienta | conversacion=%s %s(%s)",
                 conversacion_id, llamada.nombre,

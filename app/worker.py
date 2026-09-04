@@ -211,7 +211,7 @@ async def procesar_turno(turno: Turno) -> None:
         # "Escribiendo..." y despues la pausa: el indicador solo tiene sentido
         # mientras se supone que se esta tipeando, no durante toda la espera.
         espera = humanizacion.demora_de_escritura(parte)
-        await _mostrar_escribiendo(turno, espera)
+        await _mostrar_escribiendo(turno, espera, numero)
 
         id_externo = await _enviar(turno, parte)
         await db.ejecutar(_GUARDAR_RESPUESTA, turno.conversacion_id, parte, id_externo)
@@ -255,11 +255,19 @@ async def _uso_anomalo(turno: Turno) -> bool:
     return True
 
 
-async def _mostrar_escribiendo(turno: Turno, segundos: float) -> None:
+async def _mostrar_escribiendo(turno: Turno, segundos: float, parte: int = 1) -> None:
     """Mantiene el indicador mientras dura la pausa.
 
-    Telegram lo apaga solo a los ~5 segundos, asi que hay que renovarlo. Si
-    falla, no importa: es cosmetico y no puede impedir que el mensaje salga.
+    Telegram lo apaga solo a los ~5 segundos, asi que hay que renovarlo. En
+    Meta dura 25 segundos **o hasta que uno responde**, y ahi esta el problema
+    del segundo mensaje: despues de enviar el primero el indicador se apaga, y
+    reactivarlo significa volver a marcar como leido un mensaje que ya esta
+    leido. Si Meta lo rechaza, el cliente ve el segundo globo aparecer de la
+    nada.
+
+    Si falla no se corta el envio —es cosmetico—, pero a partir del segundo
+    mensaje se loguea en serio: es un pedido explicito del cliente y un debug
+    mudo no deja verlo.
     """
     settings = obtener_settings()
     restante = segundos
@@ -278,7 +286,14 @@ async def _mostrar_escribiendo(turno: Turno, segundos: float) -> None:
                     turno.ultimo_id_externo,
                 )
         except Exception:
-            logger.debug("no se pudo mostrar el indicador de escribiendo")
+            if parte > 1:
+                logger.warning(
+                    "no se pudo mostrar el indicador antes del mensaje %s: "
+                    "el cliente lo va a ver aparecer sin aviso", parte,
+                    exc_info=True,
+                )
+            else:
+                logger.debug("no se pudo mostrar el indicador de escribiendo")
         tramo = min(4.0, restante)
         await asyncio.sleep(tramo)
         restante -= tramo

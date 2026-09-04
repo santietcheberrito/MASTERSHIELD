@@ -17,12 +17,20 @@ limpieza previa. Con eso el agente ya cotiza.
 
 Falta esto:
 
-- **¿Qué determina si va el "Precio Normal" o el "Precio especial"?** Es la más
-  importante: entre $42 y $37 hay un 12% de diferencia y el agente no tiene
-  cómo decidir. ¿Es por volumen? ¿Por tipo de cliente? ¿Es una promoción
-  vigente? Mientras tanto el agente cotiza siempre con el precio normal, el más
-  alto — es preferible arrancar arriba y que el asesor pueda mejorarlo, a
-  quedarse corto y tener que subir el número después.
+- ~~**¿Qué determina si va el "Precio Normal" o el "Precio especial"?**~~
+  **Resuelto** con el documento del 4/9/2026: es una **promoción mensual**
+  ("Precio especial SEPTIEMBRE"). Está en `vigencia_precio_especial` y el
+  código la respeta: vencido el mes, el agente vuelve solo al precio normal.
+  **Hay que actualizar esa línea cada mes**, junto con los valores. Si nadie la
+  actualiza, cotiza al normal, que es el comportamiento seguro.
+- **¿Los precios especiales de octubre son los mismos?** Septiembre quedó en
+  $37 (10 años) y $25 (5 años). Conviene que nos avisen unos días antes de cada
+  cambio, o definir de una vez si la promoción es permanente.
+- **¿El traslado del personal y el alquiler de escaleras o andamios siguen
+  incluidos?** Estaban en el material anterior y no aparecen en el documento de
+  septiembre, que lista material, mano de obra, limpieza previa y garantía con
+  respaldo posventa. Son argumentos de venta fuertes: si siguen incluidos,
+  vuelven a la lista.
 - **El descuento del 10% por efectivo o transferencia, ¿se calcula sobre el
   subtotal sin IVA o sobre el total con IVA?** Da montos distintos.
 - **Confirmar el criterio de zona.** Se está tomando: todo lo que esté en Quito

@@ -10,6 +10,11 @@
 # cada conversacion guarda claves distintas.
 
 campos:
+  nombre:
+    descripcion: "Como se llama la persona. Se pide al principio y se usa despues"
+    tipo: texto
+    requerido: false
+
   linea:
     descripcion: "Arquitectonico (vidrio de inmuebles) o vehicular (autos)"
     valores: [arquitectonico, vehicular]
@@ -56,7 +61,14 @@ campos:
     requerido: true
 
   disponibilidad:
-    descripcion: "Que dia o franja le queda comoda para la visita tecnica"
+    # Es para el LLAMADO, no para la visita: la visita la coordina el asesor por
+    # telefono. La descripcion es lo que ve el modelo, y decir "visita tecnica"
+    # aca lo llevaba a preguntar por algo que despues no puede agendar.
+    #
+    # Dia y hora, tal como lo diga la persona: "el jueves por la mañana" o
+    # "manana despues de las 3". No se normaliza, porque es lo que el asesor va
+    # a leer antes de marcar.
+    descripcion: "Que dia y en que horario prefiere que lo llame un asesor"
     tipo: texto
     requerido: false
 

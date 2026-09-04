@@ -47,7 +47,7 @@ async def _conversacion(conexion, datos=None, estado="calificada"):
 
 # --- mapeo ------------------------------------------------------------------
 
-async def test_las_propiedades_traducen_el_documento(pool_en_transaccion):
+async def test_las_propiedades_traducen_el_documento(pool_en_transaccion, sin_promocion):
     doc = await documento.armar(await _conversacion(pool_en_transaccion, COMPLETO))
     props = notion.propiedades(doc)
 

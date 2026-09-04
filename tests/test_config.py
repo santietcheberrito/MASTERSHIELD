@@ -16,8 +16,8 @@ def armar(**extra) -> Settings:
 
 def test_valores_por_defecto():
     s = armar()
-    assert s.demora_respuesta_min_seg == 60
-    assert s.demora_respuesta_max_seg == 120
+    assert s.demora_respuesta_min_seg == 18
+    assert s.demora_respuesta_max_seg == 22
     assert s.horario_atencion == "09:00-18:00"
     assert s.tz == "America/Guayaquil"
     assert s.pais == "EC"

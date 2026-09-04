@@ -22,12 +22,16 @@ descuento_se_aplica_sobre: null
 
 # Que incluye el precio. Es un argumento de venta fuerte y conviene que el
 # agente lo tenga a mano: no es solo el material.
+# Esta es la lista del documento de septiembre de 2026, que es la que el
+# cliente quiere que se diga. La version anterior sumaba "traslado del personal
+# al sitio" y "alquiler de escaleras o andamios": son argumentos de venta
+# fuertes y conviene confirmar si siguen incluidos antes de dejarlos afuera para
+# siempre. Ver docs/consultas-al-cliente.md.
 incluye:
   - material
   - mano de obra de instalacion
-  - traslado del personal al sitio
-  - alquiler de escaleras o andamios
-  - limpieza profunda interna previa de los vidrios a intervenir
+  - limpieza previa de la superficie de los vidrios
+  - garantia y respaldo posventa
 
 # Zonas. No son regiones geograficas: son las dos categorias con las que el
 # cliente cotiza, mas el descarte. `zona` se releva con esta granularidad.
@@ -57,11 +61,19 @@ zonas:
     nombre: "Fuera de Ecuador"
     atiende: false   # descarte
 
-# Que decide si va el precio normal o el especial. BLOQUEA cotizar bien.
-# Mientras sea null, `calcular_precio` usa el precio normal, que es el mas alto:
-# quedarse corto y que despues el asesor suba el numero es peor que arrancar
-# arriba y que el asesor pueda mejorarlo.
-criterio_precio_especial: null
+# El precio especial es una promocion mensual: el material del cliente lo llama
+# "Precio especial SEPTIEMBRE". Vencido el mes, el especial deja de existir y
+# vuelve a regir el normal.
+#
+# Esto se declara y el codigo lo respeta, en vez de quedar en la memoria de
+# alguien: un agente ofreciendo en octubre el precio de septiembre es una
+# promesa que la empresa despues tiene que sostener o desdecir.
+#
+# Formato AAAA-MM. Al cambiar de mes hay que actualizar esta linea y los
+# valores de `precio_especial`; si no se actualiza, el agente cotiza al precio
+# normal, que es el comportamiento seguro.
+vigencia_precio_especial: "2026-09"
+
 
 productos:
   - id: control_solar_arquitectonico

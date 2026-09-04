@@ -199,6 +199,26 @@ primer mensaje, este es el primer parámetro a mirar.
   acceso a la suya hay que correr `mapear_kommo.py` y `preparar_kommo.py` de
   nuevo: los IDs del YAML son de esta cuenta y no sirven en otra.
 
+## Del documento del 4 de septiembre de 2026
+
+- [ ] **El precio especial es mensual y hay que actualizarlo cada mes.**
+  `vigencia_precio_especial` en `config/productos.yaml` dice de qué mes son los
+  valores. Vencido, el agente vuelve solo al precio normal, que es el
+  comportamiento seguro — pero deja de ofrecer la promoción. Conviene que
+  MasterShield avise unos días antes de cada cambio.
+- [ ] **¿El agente tiene que agendar la visita?** El documento dice "puede
+  separar una cita a través de la agenda que maneje el agente". No existe
+  ninguna agenda, y el `CLAUDE.md` dice lo contrario. Por ahora el agente vende
+  la visita y pregunta qué día y en qué horario prefiere que lo llamen; la
+  coordina un asesor. Si de verdad quieren agendado, hay que definir contra qué
+  calendario.
+- [ ] **¿El traslado y los andamios siguen incluidos en el precio?** Estaban en
+  el material anterior y no aparecen en el nuevo. Ver
+  `docs/consultas-al-cliente.md`.
+- [ ] **Selección múltiple para elegir producto.** El documento la sugiere para
+  que sea más fácil escoger entre los 4 productos. WhatsApp lo soporta con
+  mensajes interactivos, pero es otro formato de envío: hoy mandamos solo texto.
+
 ## Decisiones a confirmar con el cliente
 
 - [ ] A quién y por qué medio se notifica un `escalar_a_humano`.
@@ -228,9 +248,8 @@ primer mensaje, este es el primer parámetro a mirar.
 - [ ] **Confirmar cómo van a trabajar los vendedores de MasterShield.**
   `smb_message_echoes` cubre la app de WhatsApp Business. Si contestan desde
   Kommo no hay eco de Meta y la detección tiene que venir de Kommo.
-- [ ] **La demora está en 12–18 segundos, no en 60–120.** Bajada para poder
-  testear. Antes de producción vuelve a `DEMORA_RESPUESTA_MIN_SEG=60` y
-  `MAX=120`, que es lo que pidió el cliente.
+- [x] **La demora quedó en 18–22 segundos**, que es lo que el cliente pidió el
+  4/9/2026: unos 20 desde que deja de escribir. Ya no hay que volver a 60–120.
 - [x] **Logging estructurado y métricas.** `app/registro.py` con structlog y
   `conversacion_id` atado a todo el turno; `GET /metricas` con las alertas en
   castellano. Los agotados del CRM ya son visibles.

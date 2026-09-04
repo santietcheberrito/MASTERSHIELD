@@ -214,3 +214,16 @@ def settings_de_prueba(monkeypatch):
     obtener_settings.cache_clear()
     yield
     obtener_settings.cache_clear()
+
+
+@pytest.fixture
+def sin_promocion(monkeypatch):
+    """Saca la promoción del mes, para que los precios no dependan del calendario.
+
+    El precio especial vence a fin de mes y el código lo respeta. Un test que
+    afirme "el presupuesto es 42 × 25" sin fijar esto pasa en octubre y falla en
+    septiembre, o al revés: la falla no dice nada sobre el código.
+    """
+    from app import precios
+
+    monkeypatch.setattr(precios, "_especial_vigente", lambda cfg, hoy=None: False)

@@ -6,8 +6,10 @@ es exactamente lo que tienen que hacer, porque el error se descubriría si no
 cuando un cliente real reciba un presupuesto que no cierra.
 """
 
+from datetime import date
 import pytest
 
+from app import precios
 from app.precios import Cotizacion, cotizar, garantias_disponibles
 
 CONTROL_SOLAR = "control_solar_arquitectonico"
@@ -18,6 +20,11 @@ VEHICULAR = "seguridad_vehicular"
 QUITO = "quito_y_valles"
 OTRA = "otra_ciudad"
 AFUERA = "fuera_del_pais"
+
+# Los precios de lista se prueban con una fecha fuera de la promoción del mes.
+# Sin fijarla, estos tests dependerían del calendario y se caerían solos cuando
+# venciera el especial, que es ruido y no una falla.
+SIN_PROMO = date(2027, 1, 15)
 
 
 # --- precios de lista -------------------------------------------------------
@@ -32,7 +39,7 @@ AFUERA = "fuera_del_pais"
     ],
 )
 def test_precio_de_lista_en_quito(producto, garantia, precio):
-    c = cotizar(producto, 20, QUITO, garantia)
+    c = cotizar(producto, 20, QUITO, garantia, hoy=SIN_PROMO)
     assert c.puede_cotizar
     assert c.precio_m2 == precio
     assert c.subtotal == precio * 20
@@ -48,8 +55,8 @@ def test_los_valles_cuentan_como_quito():
 
 
 def test_otras_ciudades_pagan_diez_dolares_mas_por_metro():
-    quito = cotizar(CONTROL_SOLAR, 25, QUITO, 10)
-    otra = cotizar(CONTROL_SOLAR, 25, OTRA, 10)
+    quito = cotizar(CONTROL_SOLAR, 25, QUITO, 10, hoy=SIN_PROMO)
+    otra = cotizar(CONTROL_SOLAR, 25, OTRA, 10, hoy=SIN_PROMO)
     assert otra.precio_m2 - quito.precio_m2 == 10
     assert otra.subtotal == 52 * 25
 
@@ -58,7 +65,7 @@ def test_el_total_no_lleva_iva_sumado():
     """El cliente pidió que el agente diga los precios con la frase "más IVA",
     no que lo sume. Así el número que sale por chat es el mismo que figura en
     la lista de la empresa."""
-    c = cotizar(CONTROL_SOLAR, 10, QUITO, 10)
+    c = cotizar(CONTROL_SOLAR, 10, QUITO, 10, hoy=SIN_PROMO)
     assert c.subtotal == 420
     assert c.subtotal != round(420 * 1.15, 2)
 
@@ -69,9 +76,9 @@ def test_informa_el_descuento_por_pago_de_contado():
 
 def test_informa_que_incluye_la_instalacion():
     """Es argumento de venta: no es solo el material."""
-    c = cotizar(CONTROL_SOLAR, 10, QUITO, 10)
+    c = cotizar(CONTROL_SOLAR, 10, QUITO, 10, hoy=SIN_PROMO)
     assert any("mano de obra" in i for i in c.incluye)
-    assert any("escaleras" in i or "andamios" in i for i in c.incluye)
+    assert any("garantia" in i or "posventa" in i for i in c.incluye)
 
 
 # --- mínimos de venta -------------------------------------------------------
@@ -183,14 +190,43 @@ def test_zona_inexistente():
 
 # --- mientras falte el criterio del precio especial -------------------------
 
-def test_usa_el_precio_normal_mientras_no_se_sepa_cuando_va_el_especial():
+def test_vencida_la_promocion_vuelve_el_precio_normal():
     """Quedarse corto y que el asesor tenga que subir el número después es peor
     que arrancar arriba y poder mejorarlo."""
-    c = cotizar(CONTROL_SOLAR, 20, QUITO, 10)
-    assert c.precio_m2 == 42, "el especial es 37; no se usa hasta saber cuándo aplica"
+    c = cotizar(CONTROL_SOLAR, 20, QUITO, 10, hoy=SIN_PROMO)
+    assert c.precio_m2 == 42
+
+
+def test_dentro_del_mes_la_estimacion_usa_el_precio_especial():
+    """La estimación es para el vendedor, pero tiene que contar la misma
+    historia que la conversación: si el agente informó 37, el CRM no puede
+    decir 42."""
+    c = cotizar(CONTROL_SOLAR, 20, QUITO, 10, hoy=date(2026, 9, 15))
+    assert c.precio_m2 == 37
 
 
 def test_la_cotizacion_redondea_a_centavos():
-    c = cotizar(CONTROL_SOLAR, 7.33, QUITO, 10)
+    c = cotizar(CONTROL_SOLAR, 7.33, QUITO, 10, hoy=SIN_PROMO)
     assert c.subtotal == round(42 * 7.33, 2)
     assert isinstance(c, Cotizacion)
+
+
+# --- la promoción del mes ---------------------------------------------------
+
+def test_el_precio_especial_rige_dentro_del_mes():
+    cfg = {"vigencia_precio_especial": "2026-09"}
+    assert precios._especial_vigente(cfg, date(2026, 9, 30)) is True
+
+
+def test_el_precio_especial_no_sobrevive_al_mes():
+    """Un agente prometiendo en octubre el precio de septiembre deja a la
+    empresa teniendo que sostenerlo o desdecirse delante del cliente."""
+    cfg = {"vigencia_precio_especial": "2026-09"}
+    assert precios._especial_vigente(cfg, date(2026, 10, 1)) is False
+
+
+def test_sin_vigencia_declarada_no_hay_promocion():
+    """El comportamiento seguro es el precio normal, que es el más alto:
+    quedarse corto y que el asesor tenga que subir el número es peor."""
+    assert precios._especial_vigente({}, date(2026, 9, 15)) is False
+    assert precios._especial_vigente({"vigencia_precio_especial": None}) is False

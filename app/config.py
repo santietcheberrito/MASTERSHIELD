@@ -76,12 +76,16 @@ class Settings(BaseSettings):
     # el tablero que el cliente ya conoce.
     crm_destino: str = "ambos"
 
-    # El cliente pidio que el agente no conteste al instante sino que espere
-    # entre 1 y 2 minutos. Ese retraso ES la ventana del buffer: se sortea por
-    # mensaje y corre `procesar_despues`, asi el agente no empieza a pensar
-    # hasta que paso el tiempo. Ver app/humanizacion.py.
-    demora_respuesta_min_seg: int = Field(default=60, gt=0, le=600)
-    demora_respuesta_max_seg: int = Field(default=120, gt=0, le=600)
+    # Cuanto espera el agente desde que el cliente deja de escribir. Ese retraso
+    # ES la ventana del buffer: se sortea por mensaje y corre `procesar_despues`,
+    # asi cada mensaje nuevo lo reinicia y una rafaga se contesta como un solo
+    # turno. Ver app/humanizacion.py.
+    #
+    # El cliente arranco pidiendo 1 a 2 minutos y despues lo bajo a unos 20
+    # segundos: dos minutos de silencio en un chat de ventas se lee como que no
+    # hay nadie. Se sortea igual, porque un retraso fijo es un patron detectable.
+    demora_respuesta_min_seg: int = Field(default=18, gt=0, le=600)
+    demora_respuesta_max_seg: int = Field(default=22, gt=0, le=600)
     horario_atencion: str = "09:00-18:00"
 
     # El cliente opera en Quito. La zona horaria no es un detalle de formato:

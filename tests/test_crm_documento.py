@@ -12,6 +12,7 @@ import pytest
 
 from app import scoring
 from app.crm import documento
+from app.precios import informar_precios
 
 pytestmark = [pytest.mark.db, pytest.mark.usefixtures("settings_de_prueba")]
 
@@ -43,7 +44,7 @@ async def _conversacion(conexion, datos=None, estado="calificada", telefono="+59
     return id_conv
 
 
-async def test_arma_el_lead_completo(pool_en_transaccion):
+async def test_arma_el_lead_completo(pool_en_transaccion, sin_promocion):
     doc = await documento.armar(await _conversacion(pool_en_transaccion, COMPLETO))
 
     assert doc.lead["etapa"] == scoring.ALTA
@@ -54,7 +55,7 @@ async def test_arma_el_lead_completo(pool_en_transaccion):
     assert doc.contacto["telefono"] == "+593999123456"
 
 
-async def test_la_nota_lleva_el_resumen_y_la_transcripcion(pool_en_transaccion):
+async def test_la_nota_lleva_el_resumen_y_la_transcripcion(pool_en_transaccion, sin_promocion):
     """El vendedor lee el resumen antes de marcar; la transcripción está para
     cuando necesite saber qué se habló."""
     doc = await documento.armar(await _conversacion(pool_en_transaccion, COMPLETO))
@@ -195,3 +196,19 @@ async def test_una_calificacion_normal_no_es_urgente(pool_en_transaccion):
     doc = await documento.armar(await _conversacion(pool_en_transaccion, COMPLETO))
     assert doc.tarea["urgente"] is False
     assert doc.tarea["texto"].startswith("Llamar a")
+
+
+async def test_la_estimacion_del_crm_usa_el_precio_que_rige_hoy(pool_en_transaccion):
+    """El agente ya no da totales, pero el vendedor necesita saber si va a un
+    trabajo de 10 m² o de 200. Ese estimado tiene que contar la misma historia
+    que la conversación: si el agente informó el precio de promoción, el CRM no
+    puede mostrar el de lista.
+
+    Sin `sin_promocion`, así que usa el precio que rige de verdad.
+    """
+    doc = await documento.armar(await _conversacion(pool_en_transaccion, COMPLETO))
+    precios = informar_precios("control_solar_arquitectonico", "quito_y_valles")
+    de_diez = next(c for c in precios.calidades if c.garantia_anios == 10)
+    vigente = de_diez.precio_especial or de_diez.precio_normal
+
+    assert doc.lead["presupuesto"] == vigente * 25

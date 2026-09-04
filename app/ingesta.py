@@ -51,7 +51,11 @@ WITH conv AS (
             now())
     ON CONFLICT (canal, identificador) DO UPDATE SET
         -- Un dato que ya teniamos no se pisa con un NULL del mensaje nuevo.
-        nombre            = COALESCE(EXCLUDED.nombre, conversaciones.nombre),
+        -- Igual que el telefono: el nombre del perfil de WhatsApp es un valor
+        -- inicial y llega en cada mensaje. Si pisara al guardado, el nombre que
+        -- la persona dio cuando se lo preguntamos se perderia en el mensaje
+        -- siguiente y el lead volveria a llamarse como el perfil.
+        nombre            = COALESCE(conversaciones.nombre, EXCLUDED.nombre),
         -- El telefono del canal es solo el valor inicial. En WhatsApp viene en
         -- cada mensaje, y si pisara al guardado, el numero que el cliente pidio
         -- que le llamen —una oficina, un fijo— se perderia en el mensaje

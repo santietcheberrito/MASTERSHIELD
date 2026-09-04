@@ -63,7 +63,7 @@ def test_no_se_puede_decir_un_precio_sin_haberlo_calculado():
     """Repetir un precio de memoria no vale: hay que volver a calcularlo."""
     ok, motivo = verificacion.verificar("Como le decía, son 1050 dólares.", set())
     assert not ok
-    assert "sin haber calculado" in motivo
+    assert "sin haber consultado" in motivo
 
 
 def test_un_mensaje_sin_plata_siempre_pasa():

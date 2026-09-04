@@ -206,28 +206,52 @@ async def test_un_precio_que_no_salio_de_la_herramienta_no_se_envia(
 
 
 @pytest.mark.db
-async def test_el_precio_calculado_en_el_turno_si_se_envia(
-    pool_en_transaccion, monkeypatch, settings_de_prueba
-):
-    conexion = pool_en_transaccion
+async def _conversacion_con_precio(conexion, texto_del_agente):
+    """Un turno donde el agente consulta el precio y después dice `texto`."""
     id_conv = await _conversacion(conexion)
     await conexion.execute(
         "UPDATE conversaciones SET datos = $2::jsonb WHERE id = $1", id_conv,
         {"linea": "arquitectonico", "objetivo": "control_solar",
-         "zona": "quito_y_valles", "metros_cuadrados": 25, "garantia_anios": 10},
+         "zona": "quito_y_valles", "metros_cuadrados": 25},
     )
     await _mensaje(conexion, id_conv, "cliente", "cuanto sale?")
-
-    proveedor = _ProveedorFalso([
-        Salida(llamadas=[Llamada("t1", "calcular_precio", {})]),
-        Salida(texto="Con 25 m² le queda en 1050 dólares más IVA."),
+    return id_conv, _ProveedorFalso([
+        Salida(llamadas=[Llamada("t1", "consultar_precio", {})]),
+        Salida(texto=texto_del_agente),
     ])
+
+
+async def test_el_precio_por_metro_consultado_en_el_turno_si_se_envia(
+    pool_en_transaccion, monkeypatch, settings_de_prueba
+):
+    conexion = pool_en_transaccion
+    id_conv, proveedor = await _conversacion_con_precio(
+        conexion, "La de 10 años está en 37 dólares más IVA el metro, y la de 5 en 25."
+    )
     monkeypatch.setattr(loop, "_cliente", lambda: proveedor)
 
     r = await loop.responder(id_conv)
 
     assert r.precio_bloqueado is False
-    assert "1050" in r.texto
+    assert "37" in r.texto and "25" in r.texto
+
+
+async def test_un_total_no_se_envia_aunque_la_cuenta_este_bien(
+    pool_en_transaccion, monkeypatch, settings_de_prueba
+):
+    """25 m² por 42 son 1050 y la cuenta es correcta, pero el cliente pidió que
+    el agente no calcule: el número final sale de las medidas que toma el asesor
+    en la visita. Un total no lo autoriza nadie."""
+    conexion = pool_en_transaccion
+    id_conv, proveedor = await _conversacion_con_precio(
+        conexion, "Con 25 m² le queda en 1050 dólares más IVA."
+    )
+    monkeypatch.setattr(loop, "_cliente", lambda: proveedor)
+
+    r = await loop.responder(id_conv)
+
+    assert r.precio_bloqueado is True
+    assert "1050" not in r.texto
 
 
 def test_el_telefono_del_canal_va_marcado_como_sin_confirmar(settings_de_prueba):

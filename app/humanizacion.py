@@ -26,8 +26,10 @@ CPS_MAX = 40
 PAUSA_MIN = 1.5
 PAUSA_MAX = 7.0
 
-# Un mensaje mas largo que esto se parte aunque venga en una sola linea.
-LARGO_COMODO = 220
+# Un mensaje mas largo que esto se parte aunque venga en una sola linea. El
+# cliente pidio bloques cortos: en el telefono, un parrafo de 220 caracteres
+# ocupa media pantalla y se lee como un folleto, no como alguien contestando.
+LARGO_COMODO = 150
 # Nunca mas de esto: tres globos seguidos ya es mucho.
 MAX_PARTES = 3
 

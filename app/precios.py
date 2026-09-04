@@ -12,6 +12,8 @@ Todo sale de `config/productos.yaml`. Cambiar un precio es editar el YAML.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -104,11 +106,125 @@ def garantias_disponibles(id_producto: str) -> list[int]:
     return [o["garantia_anios"] for o in producto.get("opciones") or []]
 
 
+@dataclass
+class Calidad:
+    """Una de las calidades de un producto, con su precio por m2."""
+
+    garantia_anios: int
+    precio_normal: float
+    precio_especial: float | None
+    vida_util_anios: list[int] | None = None
+
+
+@dataclass
+class Precios:
+    """Los precios por m2 de un producto. No hay total: el cliente pidio que el
+    agente diga cuanto vale el metro y nada mas."""
+
+    puede_informar: bool
+    motivo: str = ""
+    producto: str = ""
+    zona: str = ""
+    # "exacto" o "desde": con seguridad arquitectonica el grosor lo define un
+    # asesor, asi que el precio es un piso.
+    tipo: str = "exacto"
+    calidades: list[Calidad] = field(default_factory=list)
+    recargo_m2: float = 0.0
+    minimo_m2: float | None = None
+    descuento_pago_contado: int | None = None
+    incluye: list[str] = field(default_factory=list)
+    datos_faltantes: list[str] = field(default_factory=list)
+
+
+def _especial_vigente(cfg: dict[str, Any], hoy: date | None = None) -> bool:
+    """Si la promocion del mes sigue en pie.
+
+    Sin fecha declarada no hay promocion: se cotiza al precio normal, que es el
+    mas alto. Quedarse corto y que el asesor tenga que subir el numero es peor
+    que arrancar arriba y que pueda mejorarlo.
+    """
+    vigencia = cfg.get("vigencia_precio_especial")
+    if not vigencia:
+        return False
+    ahora = hoy or datetime.now(ZoneInfo("America/Guayaquil")).date()
+    return f"{ahora.year:04d}-{ahora.month:02d}" == str(vigencia)
+
+
+def informar_precios(
+    id_producto: str, zona: str | None, hoy: date | None = None
+) -> Precios:
+    """Los precios por m2, sin cuentas.
+
+    Es lo que reemplazo a cotizar un total: el cliente pidio dar el valor del
+    metro cuadrado y que el calculo lo haga el asesor en la visita. Los metros
+    se siguen relevando —hacen falta para el minimo de instalacion y para que
+    el vendedor sepa el tamaño del trabajo— pero no se multiplican.
+    """
+    cfg = configuracion()
+
+    producto = _producto(id_producto)
+    if producto is None:
+        return Precios(False, motivo=f"no existe el producto {id_producto!r}")
+
+    if producto["cotizable"] == "ninguno":
+        return Precios(
+            False,
+            motivo="este producto lo cotiza un asesor",
+            producto=producto["nombre"],
+            datos_faltantes=list(producto.get("datos_requeridos") or []),
+        )
+
+    # La zona no cambia el precio de lista pero si el recargo y el minimo, y el
+    # minimo es lo primero que hay que decirle a alguien de otra provincia.
+    datos_zona = cfg["zonas"].get(zona) if zona else None
+    if zona and datos_zona is None:
+        return Precios(False, motivo=f"zona desconocida: {zona!r}")
+    if datos_zona is not None and not datos_zona["atiende"]:
+        return Precios(
+            False,
+            motivo=f"no se atiende en {datos_zona['nombre'].lower()}",
+            producto=producto["nombre"],
+            zona=zona or "",
+        )
+
+    # El precio especial es una promocion del mes. Vencida, no se ofrece: un
+    # agente prometiendo en octubre el precio de septiembre deja a la empresa
+    # teniendo que sostenerlo o desdecirse delante del cliente.
+    especial_vigente = _especial_vigente(cfg, hoy)
+
+    # Seguridad no tiene precio normal ni especial sino un piso —`precio_desde`—
+    # porque el nivel lo define un asesor. Es la misma forma con otro nombre.
+    calidades = [
+        Calidad(
+            garantia_anios=o["garantia_anios"],
+            precio_normal=o.get("precio_normal", o.get("precio_desde")),
+            precio_especial=o.get("precio_especial") if especial_vigente else None,
+            vida_util_anios=o.get("vida_util_anios"),
+        )
+        for o in producto.get("opciones") or []
+        if o.get("precio_normal") is not None or o.get("precio_desde") is not None
+    ]
+
+    return Precios(
+        puede_informar=bool(calidades),
+        producto=producto["nombre"],
+        zona=zona or "",
+        tipo=producto["cotizable"],
+        calidades=calidades,
+        recargo_m2=(datos_zona or {}).get("recargo_m2", 0),
+        minimo_m2=(datos_zona or {}).get("minimo_m2"),
+        descuento_pago_contado=cfg.get("descuento_efectivo_transferencia"),
+        incluye=list(cfg.get("incluye") or []),
+        motivo="" if calidades else "el producto no tiene precios cargados",
+    )
+
+
 def cotizar(
     id_producto: str,
     metros: float | None,
     zona: str | None,
     garantia_anios: int | None = None,
+    hoy: date | None = None,
 ) -> Cotizacion:
     """Calcula el precio de un pedido. No decide nada que no esté en el YAML."""
     cfg = configuracion()
@@ -190,15 +306,16 @@ def cotizar(
         base = opcion["precio_desde"]
         tipo = "desde"
     else:
-        # Mientras no esté definido qué activa el precio especial, se usa el
-        # normal, que es el más alto. Quedarse corto y que el asesor tenga que
-        # subir el número después es peor que arrancar arriba y poder mejorarlo.
-        if cfg["criterio_precio_especial"] is None:
-            base = opcion["precio_normal"]
+        # El especial es la promoción del mes. Vencida, rige el normal.
+        #
+        # Esta estimación es para el vendedor, no para el cliente: el agente ya
+        # no da totales. Que use el mismo precio que el agente informó es lo que
+        # hace que el número del CRM y el de la conversación cuenten la misma
+        # historia.
+        if _especial_vigente(cfg, hoy) and opcion.get("precio_especial") is not None:
+            base = opcion["precio_especial"]
         else:
-            raise ConfiguracionIncompleta(
-                "hay criterio_precio_especial definido pero cotizar() no lo implementa"
-            )
+            base = opcion["precio_normal"]
         tipo = "exacto"
 
     recargo = datos_zona["recargo_m2"]

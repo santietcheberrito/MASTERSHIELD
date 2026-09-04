@@ -42,9 +42,34 @@ prompt: el agente no promete una fecha, no confirma un horario y no dice que
 alguien va a ir tal día. Dice que un asesor MS se comunica para coordinar.
 
 La visita es gratuita en Quito y sus valles, y su única condición declarada es
-que el cliente entregue información detallada del pedido. También se puede
-cotizar de forma rápida con fotos o una referencia de metros cuadrados: eso
-sí lo hace el agente, con `calcular_precio`.
+que el cliente entregue información detallada del pedido.
+
+**El agente vende la visita, aunque no la agende.** El documento del 4/9/2026
+pide que la presente por lo que la persona gana —se despeja cualquier duda y se
+ve el material funcionando, se define el material adecuado, se toman las medidas
+exactas y sale un presupuesto preliminar— y que proponga siempre ese paso
+siguiente. Pero la coordinación y la confirmación las hace un asesor por
+teléfono.
+
+### Precios: el agente informa el metro, no calcula
+
+**El agente no hace cuentas.** Informa cuánto vale el metro cuadrado del
+material que la persona necesita, con sus dos calidades, y ahí termina. El
+total sale de las medidas exactas que toma el asesor en la visita.
+
+Es un cambio de septiembre de 2026 sobre el diseño original, y está sostenido
+por código, no sólo por el prompt: `consultar_precio` no devuelve ningún
+subtotal, y la verificación de precios sólo autoriza los valores por m² que la
+herramienta devolvió en ese turno. Un total no lo autoriza nadie, aunque la
+cuenta esté bien.
+
+`cotizar` sigue existiendo pero sólo para el CRM: el vendedor necesita saber si
+va a un trabajo de 10 m² o de 200 antes de levantar el teléfono. Es un estimado
+interno y el cliente nunca lo escucha.
+
+**El precio especial es una promoción mensual.** `vigencia_precio_especial` en
+`config/productos.yaml` dice de qué mes es; vencido, el agente vuelve solo al
+precio normal. Hay que actualizarla cada mes.
 
 ---
 
@@ -174,6 +199,7 @@ Herramientas:
 - `guardar_dato(campo, valor)` → persiste incrementalmente en
   `conversaciones.datos`. Se llama apenas el cliente menciona el dato,
   no al final.
+- `consultar_precio()` → el precio por m² del producto. No calcula totales.
 - `finalizar_calificacion()` → cierra el relevamiento y dispara scoring + Kommo.
   Es idempotente: si ya se cerró, no vuelve a sincronizar.
 - `escalar_a_humano(motivo)` → pausa el agente y crea la tarea urgente en Kommo.
@@ -299,13 +325,14 @@ Requisito central del proyecto. Reglas duras:
 
 **Hay dos escalas de tiempo distintas y no hay que confundirlas.**
 
-1. **Retraso de respuesta: 60–120 segundos**, decidido por el cliente para dar
-   realismo. Se mide desde el último mensaje del cliente hasta el primer
-   mensaje del agente, y la ventana de recolección va **dentro** de ese
-   presupuesto, no encima: si se sumaran, el peor caso serían 150 segundos y
-   dejaría de ser "1 a 2 minutos". Aplica siempre, también a la primera
-   respuesta de una conversación. El valor se sortea por turno, con variación
-   real: un retraso fijo es un patrón detectable.
+1. **Retraso de respuesta: unos 20 segundos** desde que el cliente deja de
+   escribir. Arrancó en 60–120 por pedido del cliente y él mismo lo bajó: dos
+   minutos de silencio en un chat de ventas se leen como que no hay nadie.
+
+   Ese retraso **es** la ventana de recolección, no se suma a ella: cada
+   mensaje nuevo lo reinicia, así una ráfaga se contesta como un solo turno.
+   Aplica siempre, también a la primera respuesta. Se sortea por turno —18 a 22
+   segundos— porque un retraso fijo es un patrón detectable.
 2. **Pausa entre mensajes partidos: 1.5–7 segundos**, proporcional al largo del
    texto (aprox. 25–40 caracteres por segundo). Es el tiempo que tarda una
    persona en tipear la línea siguiente.
@@ -313,14 +340,21 @@ Requisito central del proyecto. Reglas duras:
 - Indicador de "escribiendo" solo en los últimos segundos antes de enviar.
   Nadie tipea durante dos minutos: dejarlo prendido todo el retraso delata
   tanto como no ponerlo.
+- **Y también antes del segundo mensaje**, pedido explícito del cliente: un
+  globo que aparece de la nada delata tanto como el primero. Ojo con WhatsApp:
+  Meta apaga el indicador cuando uno responde, y reactivarlo significa volver a
+  marcar como leído un mensaje que ya lo está. Si falla, se loguea en warning a
+  partir del segundo mensaje.
 - **Supersesión obligatoria.** Si llega un mensaje del cliente mientras hay una
   respuesta esperando a ser enviada, esa respuesta se descarta y el turno se
-  rehace con todo. Con un retraso de 90 segundos esto no es un caso de borde:
+  rehace con todo. Incluso con 20 segundos de ventana esto pasa:
   es lo que va a pasar seguido.
 - **Español de Ecuador. Trato de usted, nunca voseo ni tuteo.** Registro
   formal pero cálido, como el del documento de preguntas frecuentes del
   cliente. Un agente que vosea delata al instante que no es de ahí.
-- Sin emojis salvo que el cliente los use primero.
+- **Un emoji por mensaje, cuando suma.** El cliente los pidió: dan calidez y
+  son la forma normal de escribir por WhatsApp en Ecuador. No en cada mensaje y
+  nunca en un precio ni en una disculpa.
 - Prohibido: "¿En qué más puedo ayudarte?", "Estoy aquí para asistirte",
   listas con viñetas, mayúsculas de encabezado, respuestas que arrancan
   con "¡Claro!".
