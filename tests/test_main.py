@@ -45,9 +45,13 @@ def test_health_con_base_viva(cliente, monkeypatch):
     assert respuesta.json() == {"estado": "ok", "base": "ok"}
 
 
-def test_health_con_base_caida(cliente, monkeypatch):
-    """503 y no 500: el proceso esta vivo, la base no. Railway tiene que poder
-    distinguir las dos cosas."""
+def test_health_responde_200_aunque_la_base_este_caida(cliente, monkeypatch):
+    """El health check decide si la plataforma reinicia el contenedor, y
+    reiniciar no arregla que Supabase esté caído: corta los turnos en vuelo y
+    entra en un ciclo de reinicios. Render reinicia tras 60 segundos de checks
+    fallidos, y durante un deploy lo cancela entero.
+
+    Que la base no responda se ve en el cuerpo y en `/metricas`."""
 
     async def _muerta(timeout=3.0):
         return False
@@ -55,13 +59,17 @@ def test_health_con_base_caida(cliente, monkeypatch):
     monkeypatch.setattr(db, "esta_viva", _muerta)
 
     respuesta = cliente.get("/health")
-    assert respuesta.status_code == 503
+    assert respuesta.status_code == 200, "un 503 acá provoca reinicios inútiles"
     assert respuesta.json() == {"estado": "degradado", "base": "sin conexion"}
 
 
 def test_el_servicio_levanta_aunque_la_base_no_responda(monkeypatch):
     """Si el pool no se puede crear, el arranque no se aborta: se loguea y
-    /health lo reporta."""
+    /health lo reporta en el cuerpo, sin fallar el check.
+
+    Es el caso que distingue "el deploy no arrancó" de "la base no responde":
+    lo segundo no se arregla reiniciando, así que la plataforma no tiene que
+    intentarlo."""
     monkeypatch.setenv("DATABASE_URL", URL)
     obtener_settings.cache_clear()
 
@@ -75,7 +83,9 @@ def test_el_servicio_levanta_aunque_la_base_no_responda(monkeypatch):
     monkeypatch.setattr(db, "cerrar", _cerrar)
 
     with TestClient(main.app) as cliente:
-        assert cliente.get("/health").status_code == 503
+        respuesta = cliente.get("/health")
+        assert respuesta.status_code == 200
+        assert respuesta.json()["base"] == "sin conexion"
 
     obtener_settings.cache_clear()
 

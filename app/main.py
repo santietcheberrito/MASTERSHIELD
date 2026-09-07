@@ -108,12 +108,22 @@ app.include_router(webhook.router)
 
 @app.get("/health")
 async def health() -> JSONResponse:
+    """Si el proceso esta vivo. Es lo que la plataforma usa para reiniciarlo.
+
+    Devuelve 200 aunque la base no responda, y el cuerpo lo dice. La razon es
+    que un health check que falla hace que Render reinicie el contenedor a los
+    60 segundos, y reiniciar no arregla que Supabase este caido: solo corta los
+    turnos en vuelo y entra en un ciclo de reinicios. Durante un deploy es peor
+    todavia —cancela el deploy entero— por una falla que no es del deploy.
+
+    Que la base este caida se ve en `/metricas`, que es el lugar donde se mira
+    el estado del sistema, y en el cuerpo de aca.
+    """
     base_viva = await db.esta_viva()
-    cuerpo = {
+    return JSONResponse({
         "estado": "ok" if base_viva else "degradado",
         "base": "ok" if base_viva else "sin conexion",
-    }
-    return JSONResponse(cuerpo, status_code=200 if base_viva else 503)
+    })
 
 
 @app.get("/metricas")
