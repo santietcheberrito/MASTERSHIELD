@@ -18,6 +18,7 @@ from typing import Any
 
 from app.config import obtener_settings
 from app.crm.documento import Documento
+from app.kommo import archivos as archivos_kommo
 from app.kommo.cliente import Kommo, KommoNoConfigurado, configuracion
 
 logger = logging.getLogger(__name__)
@@ -194,5 +195,65 @@ async def sincronizar(documento: Documento, referencia: dict | None = None) -> d
         )
         logger.info("tarea adelantada por derivacion | kommo_tarea=%s", id_tarea)
 
+    # --- archivos -----------------------------------------------------------
+    # Las fotos que mando el cliente. Van al final: si algo falla aca, el lead
+    # ya esta cargado y el asesor tiene con que llamar. Perder una foto es malo;
+    # perder el lead entero por una foto seria peor.
+    subidos = dict(referencia.get("archivos") or {})
+    if documento.archivos:
+        subidos = await _subir_archivos(kommo, id_lead, documento.archivos, subidos)
+
     return {"destino": "kommo", "contacto": id_contacto, "lead": id_lead,
-            "tarea": id_tarea, "huella_nota": huella}
+            "tarea": id_tarea, "huella_nota": huella, "archivos": subidos}
+
+
+async def _subir_archivos(kommo: Kommo, id_lead: int, archivos: list[dict],
+                          ya_subidos: dict) -> dict:
+    """Sube al lead lo que todavia no este. Nunca corta la sincronizacion.
+
+    `ya_subidos` mapea el id del archivo en Meta al uuid que quedo en Kommo, y
+    es lo que evita subir la misma foto en cada reintento.
+    """
+    pendientes = [a for a in archivos if a["id"] not in ya_subidos]
+    if not pendientes:
+        return ya_subidos
+
+    try:
+        drive = await archivos_kommo.drive_de_la_cuenta(kommo)
+    except Exception:
+        logger.exception("no se pudo averiguar el drive: no se suben archivos "
+                         "| kommo_lead=%s", id_lead)
+        return ya_subidos
+
+    nuevos = []
+    for numero, archivo in enumerate(pendientes, len(ya_subidos) + 1):
+        try:
+            uuid = await archivos_kommo.subir(
+                kommo, drive,
+                archivos_kommo.nombre_para(archivo, numero),
+                archivo["contenido"],
+                archivo.get("mime") or "application/octet-stream",
+            )
+        except Exception:
+            # Un archivo que falla no puede llevarse puestos a los demas ni a
+            # la sincronizacion: queda fuera de `ya_subidos` y el proximo
+            # reintento lo vuelve a intentar, si Meta todavia lo tiene.
+            logger.exception("no se pudo subir un archivo | kommo_lead=%s media=%s",
+                             id_lead, archivo["id"])
+            continue
+        ya_subidos[archivo["id"]] = uuid
+        nuevos.append(uuid)
+
+    if nuevos:
+        try:
+            await archivos_kommo.adjuntar(kommo, id_lead, nuevos)
+            logger.info("%s archivo(s) adjuntados al lead | kommo_lead=%s",
+                        len(nuevos), id_lead)
+        except Exception:
+            logger.exception("los archivos se subieron pero no se pudieron "
+                             "adjuntar | kommo_lead=%s", id_lead)
+            # Se quitan de la lista para que el reintento vuelva a colgarlos.
+            for uuid in nuevos:
+                ya_subidos = {k: v for k, v in ya_subidos.items() if v != uuid}
+
+    return ya_subidos

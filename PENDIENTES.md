@@ -232,6 +232,20 @@ primer mensaje, este es el primer parámetro a mirar.
   lunes a viernes, que es un default, no un dato del cliente.
 - [ ] Manejo del riesgo de rotura térmica (ver CLAUDE.md).
 
+## Archivos del cliente
+
+- [x] **Las fotos llegan al lead de Kommo.** Se bajan de Meta al armar el
+  documento y se suben al drive de la cuenta. Probado de punta a punta contra
+  el Kommo real, incluido que un reintento no las duplique.
+- [ ] **Estimar metros con visión, más adelante.** Hoy el agente ve
+  `[el cliente envio un archivo de tipo imagen]` y pide el aproximado igual, que
+  es lo correcto: una estimación sacada de una foto termina en una cotización
+  que no se sostiene. Cuando haya conversaciones reales se puede medir cuánto
+  se equivocaría y decidir con datos.
+- [ ] **Los archivos duran siete días en Meta.** Si una conversación se
+  sincroniza más tarde que eso —sólo pasaría con el CRM caído mucho tiempo—, la
+  foto ya no se puede bajar. Queda anotado el fallo y el lead se carga igual.
+
 ## Deuda del código, sin bloqueos externos
 
 - [x] **El reintento del CRM.** `app/crm/reintentos.py`, con backoff de 1 min a

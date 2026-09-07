@@ -11,14 +11,18 @@ final del camino, no una decisión de diseño.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any
 
 from app import db
+from app.canales import whatsapp
 from app.config import obtener_settings
 from app.precios import PRODUCTO_POR_OBJETIVO, cotizar
 from app.scoring import CONVERSANDO, DERIVADA, Puntaje, puntuar
+
+logger = logging.getLogger(__name__)
 
 CANALES = {"telegram": "Telegram", "whatsapp": "WhatsApp", "consola": "Consola"}
 ZONAS = {
@@ -52,6 +56,58 @@ class Documento:
     nota: str
     tarea: dict[str, Any]
     puntaje: Puntaje = field(default=None)  # type: ignore[assignment]
+    # Lo que el cliente mando por el chat, ya descargado. Cada uno trae `id`
+    # —el de Meta, que sirve para no subirlo dos veces—, `contenido` y `mime`.
+    archivos: list[dict[str, Any]] = field(default_factory=list)
+
+
+async def _archivos_del_cliente(conversacion_id: int, canal: str) -> list[dict[str, Any]]:
+    """Baja de Meta las fotos que mando el cliente.
+
+    Se descargan aca y no al recibirlas porque el webhook tiene medio segundo
+    de presupuesto y bajar una foto no entra. El margen alcanza: un archivo
+    recibido vive siete dias en Meta y esto corre a los minutos.
+
+    Si no se puede bajar alguno, se sigue sin el. Que una foto no llegue no
+    puede impedir que el lead se cargue.
+    """
+    if canal != "whatsapp":
+        return []
+
+    settings = obtener_settings()
+    if not settings.whatsapp_token:
+        return []
+
+    filas = await db.consultar(
+        "SELECT payload FROM mensajes WHERE conversacion_id = $1 "
+        "AND rol = 'cliente' AND tipo <> 'texto' ORDER BY id",
+        conversacion_id,
+    )
+
+    encontrados: list[dict[str, Any]] = []
+    vistos: set[str] = set()
+    for fila in filas:
+        for media in whatsapp.medias_del_payload(fila["payload"] or {}):
+            if media["id"] in vistos:
+                continue
+            vistos.add(media["id"])
+            try:
+                contenido, mime = await whatsapp.descargar_media(
+                    settings.whatsapp_token, media["id"]
+                )
+            except Exception:
+                logger.exception(
+                    "no se pudo bajar un archivo de Meta | conversacion=%s media=%s",
+                    conversacion_id, media["id"],
+                )
+                continue
+            encontrados.append({**media, "contenido": contenido,
+                                "mime": mime or media.get("mime")})
+
+    if encontrados:
+        logger.info("%s archivo(s) del cliente listos para el CRM | conversacion=%s",
+                    len(encontrados), conversacion_id)
+    return encontrados
 
 
 def _texto_de_la_tarea(
@@ -204,6 +260,7 @@ async def armar(conversacion_id: int) -> Documento:
     nota = resumir(datos, puntaje, presupuesto) + "\n\n---\n\n" + await transcribir(conversacion_id)
 
     nombre = fila["nombre"] or fila["telefono"] or f"Consulta {conversacion_id}"
+    archivos = await _archivos_del_cliente(conversacion_id, fila["canal"])
 
     return Documento(
         conversacion_id=conversacion_id,
@@ -230,6 +287,7 @@ async def armar(conversacion_id: int) -> Documento:
             "motivo_derivacion": motivo_derivacion,
         },
         nota=nota,
+        archivos=archivos,
         tarea={
             # La disponibilidad va en el texto, no solo en un campo del lead: la
             # lista de tareas es lo unico que el asesor mira antes de marcar, y

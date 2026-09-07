@@ -423,6 +423,31 @@ y esa detección tendría que venir de Kommo. Telegram no lo soporta.
 
 ---
 
+## Archivos que manda el cliente
+
+Un cliente que manda fotos de sus ventanas espera que alguien las mire, y el
+agente le dice que las revisa un asesor. Esa promesa se cumple: las fotos se
+descargan de Meta y se adjuntan al lead de Kommo.
+
+**Se descargan al armar el documento, no al recibirlas.** El webhook tiene
+medio segundo de presupuesto y bajar una foto no entra. El margen alcanza: un
+archivo recibido por webhook vive **siete días** en Meta, y la sincronización
+corre a los minutos. La URL de descarga que da Meta dura sólo cinco, así que se
+resuelve y se baja en el momento.
+
+**Sólo imágenes y documentos.** Un audio o un video no le sirven a nadie para
+tomar medidas y sólo llenan el drive del cliente.
+
+`crm_referencia.archivos` mapea el id del archivo en Meta al uuid que quedó en
+Kommo. Es lo que evita que un reintento —hay hasta seis— suba la misma foto
+seis veces.
+
+Si la subida falla, el lead se carga igual y el archivo queda pendiente para el
+próximo intento: perder una foto es malo, perder el lead entero por una foto
+sería peor.
+
+---
+
 ## Integración Kommo
 
 API v4, OAuth2 con token de larga duración. Se escribe cuando la

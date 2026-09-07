@@ -202,6 +202,72 @@ async def _llamar(token: str, phone_number_id: str, cuerpo: dict) -> dict:
     return respuesta.json()
 
 
+# Lo que Meta manda como adjunto y a nosotros nos sirve. El audio y el video
+# quedan afuera a proposito: nadie los va a mirar para tomar medidas, y subirlos
+# al lead solo llena el drive del cliente.
+TIPOS_CON_ARCHIVO = ("image", "document")
+
+
+def medias_del_payload(payload: dict[str, Any]) -> list[dict[str, str]]:
+    """Los archivos que trae un mensaje entrante, si trae alguno.
+
+    Devuelve el id con el que se descargan de Meta y lo que se sepa del
+    archivo. El id vive dentro del objeto del tipo —`image`, `document`— y no
+    en la raiz del mensaje.
+    """
+    try:
+        mensajes = payload["entry"][0]["changes"][0]["value"]["messages"]
+    except (KeyError, IndexError, TypeError):
+        return []
+
+    encontrados = []
+    for mensaje in mensajes or []:
+        tipo = mensaje.get("type")
+        if tipo not in TIPOS_CON_ARCHIVO:
+            continue
+        objeto = mensaje.get(tipo) or {}
+        media_id = objeto.get("id")
+        if not media_id:
+            continue
+        encontrados.append({
+            "id": media_id,
+            "tipo": tipo,
+            "mime": objeto.get("mime_type", ""),
+            # El nombre solo viene en documentos; una foto no tiene.
+            "nombre": objeto.get("filename", ""),
+        })
+    return encontrados
+
+
+async def descargar_media(token: str, media_id: str) -> tuple[bytes, str]:
+    """Baja un archivo de Meta. Devuelve (contenido, mime).
+
+    Son dos llamadas porque la primera devuelve una URL firmada que dura cinco
+    minutos, y la descarga tambien necesita el token: sin el, Meta contesta 404
+    en vez de decir que falta autenticacion.
+
+    Un archivo recibido por webhook vive siete dias en Meta. Pasado eso el id
+    ya no baja nada, asi que esto se hace cuando el archivo todavia esta.
+    """
+    cabeceras = {"Authorization": f"Bearer {token}"}
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as cliente:
+        r = await cliente.get(f"{API}/{media_id}", headers=cabeceras)
+        if r.status_code >= 400:
+            raise WhatsAppError(f"no se pudo resolver el media {media_id}: "
+                                f"{r.status_code} {r.text[:200]}")
+        datos = r.json()
+        url = datos.get("url")
+        if not url:
+            raise WhatsAppError(f"el media {media_id} no trajo url")
+
+        descarga = await cliente.get(url, headers=cabeceras)
+        if descarga.status_code >= 400:
+            raise WhatsAppError(f"no se pudo bajar el media {media_id}: "
+                                f"{descarga.status_code}")
+
+    return descarga.content, datos.get("mime_type", "application/octet-stream")
+
+
 def destino_de_envio(numero: str) -> str:
     """Corrige la rareza argentina del 9.
 

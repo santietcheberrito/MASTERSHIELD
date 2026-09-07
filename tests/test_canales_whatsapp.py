@@ -235,3 +235,57 @@ def test_borrar_o_editar_tambien_es_actividad_humana(tipo, esperado):
 
     assert eco is not None
     assert eco.texto == esperado
+
+
+# --- archivos que manda el cliente ------------------------------------------
+
+def _con_imagen(caption=None, media_id="media-123", mime="image/jpeg"):
+    imagen = {"id": media_id, "mime_type": mime, "sha256": "abc"}
+    if caption is not None:
+        imagen["caption"] = caption
+    return {"entry": [{"changes": [{"field": "messages", "value": {
+        "messaging_product": "whatsapp",
+        "metadata": {"phone_number_id": "1234"},
+        "contacts": [{"wa_id": "593987112233", "profile": {"name": "Santi"}}],
+        "messages": [{"from": "593987112233", "id": "wamid.img", "type": "image",
+                      "timestamp": "1757000000", "image": imagen}],
+    }}]}]}
+
+
+def test_encuentra_el_archivo_de_una_imagen():
+    """El id vive dentro del objeto `image`, no en la raíz del mensaje."""
+    medias = whatsapp.medias_del_payload(_con_imagen())
+
+    assert len(medias) == 1
+    assert medias[0]["id"] == "media-123"
+    assert medias[0]["mime"] == "image/jpeg"
+
+
+def test_un_mensaje_de_texto_no_trae_archivos():
+    assert whatsapp.medias_del_payload(payload()) == []
+
+
+def test_un_payload_roto_no_explota():
+    """Llega por un webhook público: nunca se confía en su forma."""
+    assert whatsapp.medias_del_payload({}) == []
+    assert whatsapp.medias_del_payload({"entry": []}) == []
+
+
+def test_el_audio_no_cuenta_como_archivo():
+    """Nadie va a escuchar un audio para tomar medidas, y subirlo sólo llena el
+    drive del cliente."""
+    p = _con_imagen()
+    mensaje = p["entry"][0]["changes"][0]["value"]["messages"][0]
+    mensaje["type"] = "audio"
+    mensaje["audio"] = mensaje.pop("image")
+
+    assert whatsapp.medias_del_payload(p) == []
+
+
+def test_el_epigrafe_sigue_siendo_el_texto_del_mensaje():
+    """La foto va al CRM y lo que la persona escribió junto con ella, al
+    historial: son dos caminos distintos y los dos importan."""
+    mensaje = whatsapp.parsear(_con_imagen(caption="estas son las ventanas"))
+
+    assert mensaje.tipo == "imagen"
+    assert mensaje.texto == "estas son las ventanas"

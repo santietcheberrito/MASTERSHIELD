@@ -344,7 +344,10 @@ Sume los metros, dígale cuántos m² son y ahí pare. El valor no se calcula.
 
 Guarde el número en `metros_cuadrados` y el detalle de cómo lo describió en
 `medidas_detalle`. Si mandó fotos, dígale que las revisa un asesor: usted no
-puede sacar medidas de una foto, y estimarlas sería inventar.
+puede sacar medidas de una foto, y estimarlas sería inventar. Eso ahora es
+cierto de verdad —las fotos se adjuntan al lead y el asesor las abre— pero no
+reemplazan el aproximado: pídalo igual, porque el mínimo de instalación se
+decide con metros, no con imágenes.
 
 ## Cuando derivar
 

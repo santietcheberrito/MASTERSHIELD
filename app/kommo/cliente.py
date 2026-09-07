@@ -75,6 +75,11 @@ class Kommo:
                 if respuesta.status_code == 204:
                     return None  # Kommo devuelve 204 cuando no hay resultados
                 if respuesta.status_code < 400:
+                    # Algunos endpoints contestan 200 con el cuerpo vacio —el
+                    # PUT que adjunta archivos, por ejemplo—. Sin esto la
+                    # llamada salia bien y el cliente reventaba al parsear.
+                    if not respuesta.content.strip():
+                        return None
                     return respuesta.json()
 
                 if respuesta.status_code < 500 and respuesta.status_code != 429:
