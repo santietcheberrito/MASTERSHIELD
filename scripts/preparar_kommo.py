@@ -1,14 +1,20 @@
 #!/usr/bin/env python3.12
-"""Crea en Kommo las etapas y campos personalizados que el agente necesita.
+"""Deja una cuenta de Kommo lista para el agente.
 
-    python3.12 scripts/preparar_kommo.py --revisar   # que haria, sin tocar nada
-    python3.12 scripts/preparar_kommo.py             # lo crea
+    python3.12 scripts/preparar_kommo.py --revisar    # que haria, sin tocar nada
+    python3.12 scripts/preparar_kommo.py              # lo hace
+    python3.12 scripts/preparar_kommo.py --verificar  # dice si quedo lista
 
-Es idempotente: lo que ya existe se reutiliza por nombre y no se duplica, asi
-que se puede correr las veces que haga falta.
+Descubre la cuenta y el embudo, crea las etapas y los campos que faltan, carga
+el catalogo de productos, y guarda todos los IDs en `config/kommo.yaml`.
 
-Al terminar deja los IDs en `config/kommo.yaml`. Esos IDs son de esta cuenta:
-en la cuenta real de MasterShield hay que volver a correrlo.
+Es idempotente: lo que ya existe se reutiliza y no se duplica, asi que se puede
+correr las veces que haga falta.
+
+Los IDs son de la cuenta contra la que se corrio y **no significan nada en
+otra**. Para mudarse a la cuenta real de MasterShield se cambian las
+credenciales del `.env` y se vuelve a correr: el codigo no cambia. El
+procedimiento completo esta en `docs/mudanza-a-la-cuenta-real.md`.
 """
 
 from __future__ import annotations
@@ -81,15 +87,225 @@ async def _post(cliente: httpx.AsyncClient, ruta: str, cuerpo: list) -> dict:
     return r.json()
 
 
-async def principal(revisar: bool) -> int:
+async def _verificar(cliente: httpx.AsyncClient, config: dict) -> int:
+    """Dice si la cuenta quedo lista, y que falta si no.
+
+    Existe para no descubrir en produccion que faltaba un campo. Devuelve la
+    cantidad de problemas: 0 es que se puede empezar a atender.
+    """
+    problemas: list[str] = []
+    avisos: list[str] = []
+
+    cuenta = await _get(cliente, "/account?with=drive_url")
+    if not cuenta.get("drive_url"):
+        problemas.append("el token no tiene permiso de archivos: las fotos que "
+                         "mande un cliente no se van a poder adjuntar al lead")
+
+    embudo = config.get("embudo", {}).get("id")
+    etapas_cuenta = {
+        e["id"]: e["name"]
+        for e in (await _get(cliente, f"/leads/pipelines/{embudo}")
+                  ).get("_embedded", {}).get("statuses", [])
+    }
+    for nombre, id_etapa in (config.get("etapas") or {}).items():
+        if id_etapa not in etapas_cuenta:
+            problemas.append(f"la etapa '{nombre}' apunta al id {id_etapa}, que no "
+                             "existe en este embudo")
+    print(f"Etapas: {len(config.get('etapas') or {})} anotadas")
+
+    campos_cuenta = {
+        c["id"] for c in (await _get(cliente, "/leads/custom_fields")
+                          ).get("_embedded", {}).get("custom_fields", [])
+    }
+    sin_id = [k for k, v in (config.get("campos_lead") or {}).items() if not v]
+    rotos = [k for k, v in (config.get("campos_lead") or {}).items()
+             if v and v not in campos_cuenta]
+    if sin_id:
+        problemas.append(f"campos sin id en el YAML: {', '.join(sin_id)}")
+    if rotos:
+        problemas.append(f"campos que apuntan a ids inexistentes: {', '.join(rotos)}")
+    print(f"Campos de lead: {len(config.get('campos_lead') or {})} anotados")
+
+    # Los usuarios deciden a quien le suena el aviso de una derivacion.
+    usuarios = (await _get(cliente, "/users")).get("_embedded", {}).get("users", [])
+    print(f"Usuarios en la cuenta: {len(usuarios)}")
+    for u in usuarios[:6]:
+        print(f"  {u['id']:>10}  {u.get('name')}  <{u.get('email')}>")
+    if not (config.get("usuarios") or {}).get("responsable_tareas"):
+        avisos.append("no hay `usuarios.responsable_tareas` en el YAML: las tareas "
+                      "de llamado quedan a nombre del dueño del token")
+
+    catalogo = (config.get("catalogo_productos") or {}).get("id")
+    if catalogo:
+        elementos = (await _get(cliente, f"/catalogs/{catalogo}/elements")
+                     ).get("_embedded", {}).get("elements", [])
+        esperados = len(_productos_a_cargar())
+        print(f"Catalogo de productos: {len(elementos)} cargados de {esperados}")
+        if len(elementos) < esperados:
+            avisos.append("faltan productos en el catalogo: correr sin --verificar")
+    else:
+        avisos.append("no se mapeo el catalogo de productos")
+
+    print()
+    for a in avisos:
+        print(f"  aviso     {a}")
+    for p in problemas:
+        print(f"  PROBLEMA  {p}")
+    if not problemas:
+        print("  La cuenta esta lista." if not avisos
+              else "  La cuenta funciona; los avisos de arriba son decisiones pendientes.")
+    return len(problemas)
+
+
+async def _catalogo_de_precios(cliente: httpx.AsyncClient, config: dict,
+                              revisar: bool) -> dict:
+    """Deja los productos cargados en Kommo, para que MasterShield vea sus precios.
+
+    No es donde el agente los lee —eso sigue saliendo de `config/productos.yaml`—
+    pero es el paso previo: cuando el equipo pueda editarlos desde Kommo, la
+    tabla ya va a estar armada y con los SKU que la enlazan al producto interno.
+
+    El SKU es la clave: `id_del_producto:garantia`. Sin el, un renombre en Kommo
+    dejaria al agente sin saber que fila es cual.
+    """
+    catalogos = (await _get(cliente, "/catalogs")
+                 ).get("_embedded", {}).get("catalogs", [])
+    productos = next((c for c in catalogos if c.get("type") == "products"), None)
+    if not productos:
+        print("\nCatalogo de productos: la cuenta no tiene uno. Se omite.")
+        return config
+
+    print(f"\nCatalogo de productos: {productos['name']} (id {productos['id']})")
+
+    campos = {
+        c.get("code"): c["id"]
+        for c in (await _get(cliente, f"/catalogs/{productos['id']}/custom_fields")
+                  ).get("_embedded", {}).get("custom_fields", [])
+    }
+    if not {"SKU", "PRICE"} <= set(campos):
+        print("  le faltan los campos SKU o Precio; se omite")
+        return config
+
+    elementos = (await _get(cliente, f"/catalogs/{productos['id']}/elements")
+                 ).get("_embedded", {}).get("elements", [])
+    por_sku = {}
+    for elemento in elementos:
+        for cf in elemento.get("custom_fields_values") or []:
+            if cf.get("field_id") == campos["SKU"]:
+                valor = (cf.get("values") or [{}])[0].get("value")
+                if valor:
+                    por_sku[str(valor)] = elemento["id"]
+
+    quiero = _productos_a_cargar()
+    faltan = [p for p in quiero if p["sku"] not in por_sku]
+    print(f"  {len(por_sku)} cargados, {len(faltan)} a crear")
+    for p in faltan:
+        print(f"  + {p['nombre']}")
+
+    if faltan and not revisar:
+        cuerpo = []
+        for p in faltan:
+            valores = [
+                {"field_id": campos["SKU"], "values": [{"value": p["sku"]}]},
+                {"field_id": campos["PRICE"], "values": [{"value": p["normal"]}]},
+            ]
+            if p["especial"] is not None and campos.get("SPECIAL_PRICE_1"):
+                valores.append({"field_id": campos["SPECIAL_PRICE_1"],
+                                "values": [{"value": p["especial"]}]})
+            cuerpo.append({"name": p["nombre"], "custom_fields_values": valores})
+        creados = await _post(cliente, f"/catalogs/{productos['id']}/elements", cuerpo)
+        for elemento in creados.get("_embedded", {}).get("elements", []):
+            print(f"    creado {elemento['id']}  {elemento['name']}")
+
+    config["catalogo_productos"] = {"id": productos["id"], "campos": campos}
+    return config
+
+
+def _productos_a_cargar() -> list[dict]:
+    """Los productos del YAML, aplanados a una fila por calidad.
+
+    Kommo tiene un precio por fila, y nuestros productos tienen dos calidades:
+    van como dos filas, que ademas es como las lee un vendedor.
+    """
+    precios = yaml.safe_load(
+        (RAIZ / "config" / "productos.yaml").read_text(encoding="utf-8"))
+    filas = []
+    for producto in precios.get("productos") or []:
+        for opcion in producto.get("opciones") or []:
+            normal = opcion.get("precio_normal", opcion.get("precio_desde"))
+            if normal is None:
+                continue
+            garantia = opcion.get("garantia_anios")
+            filas.append({
+                "sku": f"{producto['id']}:{garantia}",
+                "nombre": f"{producto['nombre']} — {garantia} años",
+                "normal": normal,
+                "especial": opcion.get("precio_especial"),
+            })
+    return filas
+
+
+async def _descubrir(cliente: httpx.AsyncClient, config: dict) -> dict:
+    """Averigua contra que cuenta y que embudo estamos trabajando.
+
+    Antes esto se leia del YAML, que traia los IDs de la cuenta de prueba. En
+    una cuenta nueva esos numeros no existen y el script fallaba con un 404 sin
+    explicar por que. Se descubren.
+    """
+    cuenta = await _get(cliente, "/account?with=drive_url")
+    print(f"Cuenta: {cuenta.get('name')} (id {cuenta.get('id')})")
+
+    if not cuenta.get("drive_url"):
+        print("  OJO: el token no tiene permiso de archivos. Las fotos que mande")
+        print("       un cliente no se van a poder adjuntar al lead.")
+
+    embudos = (await _get(cliente, "/leads/pipelines")
+               ).get("_embedded", {}).get("pipelines", [])
+    if not embudos:
+        raise SystemExit("la cuenta no tiene ningun embudo")
+
+    # El principal, o el primero si ninguno lo es.
+    embudo = next((e for e in embudos if e.get("is_main")), embudos[0])
+    print(f"Embudo: {embudo['name']} (id {embudo['id']})")
+    if len(embudos) > 1:
+        otros = ", ".join(e["name"] for e in embudos if e["id"] != embudo["id"])
+        print(f"  hay otros embudos y no se tocan: {otros}")
+
+    # Las etapas de sistema: la de entrada y la de perdido. El agente las
+    # reutiliza en vez de crear unas propias.
+    del_sistema = {}
+    for etapa in embudo.get("_embedded", {}).get("statuses", []):
+        if etapa.get("type") == 1:            # entrantes
+            del_sistema["leads_entrantes"] = etapa["id"]
+        elif etapa["id"] == 143:              # perdido, id fijo en toda cuenta
+            del_sistema["venta_perdido"] = etapa["id"]
+    if "leads_entrantes" not in del_sistema:
+        # Sin etapa de entrada, la primera del embudo hace las veces.
+        primera = sorted(embudo.get("_embedded", {}).get("statuses", []),
+                         key=lambda e: e.get("sort", 0))
+        if primera:
+            del_sistema["leads_entrantes"] = primera[0]["id"]
+
+    config["cuenta"] = {"id": cuenta.get("id"), "subdominio": cuenta.get("subdomain")}
+    config["embudo"] = {"id": embudo["id"], "nombre": embudo["name"]}
+    config["etapas_existentes"] = {**(config.get("etapas_existentes") or {}), **del_sistema}
+    return config
+
+
+async def principal(revisar: bool, verificar: bool = False) -> int:
     settings = obtener_settings()
     config = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
-    embudo = config["embudo"]["id"]
 
     base = f"https://{settings.kommo_subdomain}.kommo.com/api/v4"
     cabeceras = {"Authorization": f"Bearer {settings.kommo_access_token}"}
 
     async with httpx.AsyncClient(base_url=base, headers=cabeceras, timeout=30) as cliente:
+        config = await _descubrir(cliente, config)
+        embudo = config["embudo"]["id"]
+        print()
+
+        if verificar:
+            return await _verificar(cliente, config)
         # --- etapas ---------------------------------------------------------
         etapas_cuenta = (await _get(cliente, f"/leads/pipelines/{embudo}")
                          ).get("_embedded", {}).get("statuses", [])
@@ -172,6 +388,8 @@ async def principal(revisar: bool) -> int:
                 campos_actuales[campo["name"]] = campo["id"]
                 print(f"    creado {campo['id']}  {campo['name']}")
 
+        config = await _catalogo_de_precios(cliente, config, revisar)
+
     if revisar:
         print("\n(--revisar: no se creo nada)")
         return 0
@@ -202,4 +420,7 @@ async def principal(revisar: bool) -> int:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Prepara la cuenta de Kommo.")
     parser.add_argument("--revisar", action="store_true", help="muestra que haria, sin crear")
-    raise SystemExit(asyncio.run(principal(parser.parse_args().revisar)))
+    parser.add_argument("--verificar", action="store_true",
+                        help="dice si la cuenta quedo lista y que falta")
+    args = parser.parse_args()
+    raise SystemExit(asyncio.run(principal(args.revisar, args.verificar)))

@@ -69,7 +69,27 @@ interno y el cliente nunca lo escucha.
 
 **El precio especial es una promoción mensual.** `vigencia_precio_especial` en
 `config/productos.yaml` dice de qué mes es; vencido, el agente vuelve solo al
-precio normal. Hay que actualizarla cada mes.
+precio normal.
+
+### Cómo se actualizan los precios
+
+Los precios viven en `config/productos.yaml` y **se leen una vez al arrancar el
+proceso** (`configuracion()` está cacheada). Editar el archivo no alcanza: hay
+que reiniciar. En producción eso lo hace el deploy, así que el procedimiento es:
+
+1. Editar `precio_normal`, `precio_especial` y `vigencia_precio_especial`.
+2. Correr los tests: `tests/test_precios.py` compara contra números escritos a
+   mano y se cae si alguien se equivoca en un dígito. Es a propósito.
+3. Commit y push. El deploy reinicia el proceso y los precios nuevos rigen.
+
+Que pase por git no es burocracia: deja el historial de qué precio regía cada
+mes, que es exactamente lo que hace falta cuando un cliente reclama que le
+dijeron otra cosa.
+
+**Nadie tiene que acordarse del 1 de cada mes.** `/metricas` avisa cinco días
+antes de que la promoción venza, y si ya venció lo dice con todas las letras
+junto con qué hay que hacer. Es la misma vía por la que salen las demás
+alertas.
 
 ---
 

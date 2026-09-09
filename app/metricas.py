@@ -15,7 +15,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from calendar import monthrange
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
+
 from app import db
+from app.precios import configuracion
 
 logger = logging.getLogger(__name__)
 
@@ -96,9 +101,43 @@ async def reunir(zona: str = "America/Guayaquil", turnos_trabados: int = 3) -> d
             "eventos": {f"{f['tipo']}:{f['estado']}": f["cuantos"] for f in eventos},
         },
     }
+    datos["precios"] = estado_de_los_precios()
     datos["alertas"] = alertas(datos)
     datos["estado"] = "atencion" if datos["alertas"] else "ok"
     return datos
+
+
+# Con cuantos dias de anticipacion avisar que la promocion se termina. Cinco
+# alcanzan para preguntarle a MasterShield los valores del mes que viene sin
+# apurar a nadie.
+DIAS_DE_AVISO = 5
+
+
+def estado_de_los_precios(hoy: date | None = None) -> dict[str, Any]:
+    """De que mes son los precios especiales cargados.
+
+    El precio especial es una promocion mensual. Cuando el mes termina el
+    codigo vuelve solo al precio normal —el comportamiento seguro— pero deja de
+    ofrecer la promocion sin que nadie se entere. Esto lo hace visible.
+    """
+    vigencia = configuracion().get("vigencia_precio_especial")
+    ahora = hoy or datetime.now(ZoneInfo("America/Guayaquil")).date()
+    mes_actual = f"{ahora.year:04d}-{ahora.month:02d}"
+
+    if not vigencia:
+        return {"vigencia": None, "vigente": False, "mes_actual": mes_actual}
+
+    vigente = str(vigencia) == mes_actual
+    # Cuantos dias faltan para que termine el mes de la promocion.
+    ultimo = monthrange(ahora.year, ahora.month)[1]
+    quedan = ultimo - ahora.day if vigente else None
+
+    return {
+        "vigencia": str(vigencia),
+        "vigente": vigente,
+        "mes_actual": mes_actual,
+        "dias_que_quedan": quedan,
+    }
 
 
 def alertas(datos: dict[str, Any]) -> list[str]:
@@ -128,6 +167,22 @@ def alertas(datos: dict[str, Any]) -> list[str]:
         avisos.append(
             f"{trabados} conversacion(es) con turnos que fallan y se reintentan: "
             "hay gente esperando respuesta"
+        )
+
+    precios = datos.get("precios") or {}
+    if precios.get("vigencia") and not precios["vigente"]:
+        avisos.append(
+            f"los precios especiales cargados son de {precios['vigencia']} y "
+            f"estamos en {precios['mes_actual']}: el agente esta cotizando al "
+            "precio normal. Pedirle a MasterShield los valores del mes y "
+            "actualizar config/productos.yaml"
+        )
+    elif precios.get("dias_que_quedan") is not None and \
+            precios["dias_que_quedan"] <= DIAS_DE_AVISO:
+        avisos.append(
+            f"la promocion de {precios['vigencia']} termina en "
+            f"{precios['dias_que_quedan']} dia(s): conviene pedir los valores "
+            "del mes que viene antes de que venza"
         )
 
     derivadas = datos["conversaciones"].get("derivada", 0)

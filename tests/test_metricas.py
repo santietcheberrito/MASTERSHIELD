@@ -5,6 +5,8 @@ crudos obliga a saber cuál está mal, y eso lo sabe quien escribió el sistema,
 quien lo mira un martes a la mañana.
 """
 
+from datetime import date
+
 import pytest
 
 from app import metricas
@@ -113,3 +115,35 @@ async def test_si_la_base_falla_lo_dice_en_vez_de_explotar(monkeypatch):
 
     assert datos["estado"] == "sin datos"
     assert "sin conexion" in datos["error"]
+
+
+# --- la promoción del mes ---------------------------------------------------
+
+def test_dentro_del_mes_la_promocion_esta_vigente():
+    estado = metricas.estado_de_los_precios(date(2026, 9, 9))
+    assert estado["vigente"] is True
+    assert estado["dias_que_quedan"] == 21
+
+
+def test_avisa_unos_dias_antes_de_que_venza():
+    """Avisar cuando ya venció llega tarde: para entonces el agente ya dejó de
+    ofrecer la promoción."""
+    estado = metricas.estado_de_los_precios(date(2026, 9, 28))
+    avisos = metricas.alertas({**SANO, "precios": estado})
+
+    assert any("termina en 2 dia(s)" in a for a in avisos)
+
+
+def test_vencida_la_promocion_lo_dice_y_explica_qué_hacer():
+    """El código vuelve solo al precio normal, que es lo seguro. Pero deja de
+    ofrecer la promoción sin que nadie se entere."""
+    estado = metricas.estado_de_los_precios(date(2026, 10, 3))
+    avisos = metricas.alertas({**SANO, "precios": estado})
+
+    assert any("cotizando al precio normal" in a for a in avisos)
+    assert any("productos.yaml" in a for a in avisos)
+
+
+def test_a_mitad_de_mes_no_molesta():
+    estado = metricas.estado_de_los_precios(date(2026, 9, 9))
+    assert metricas.alertas({**SANO, "precios": estado}) == []

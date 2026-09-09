@@ -55,3 +55,16 @@ campos_contacto:
   email: 420188
 usuarios:
   santiago: 15800371
+catalogo_productos:
+  id: 15796
+  campos:
+    SKU: 420214
+    DESCRIPTION: 420216
+    PRICE: 420218
+    GROUP: 420220
+    EXTERNAL_ID: 420222
+    UNIT: 420224
+    SPECIAL_PRICE_1: 420226
+    WHOLESALE_PRICE: 420228
+    POINTS_PER_PURCHASE: 420230
+    IMAGE: 420232

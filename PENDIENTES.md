@@ -199,8 +199,14 @@ primer mensaje, este es el primer parámetro a mirar.
   vieran y se la quedara el primero. Hay que definir con MasterShield a quién
   se asignan, o si prefieren verlas por otro mecanismo.
 - [ ] **La cuenta de prueba es de Kommo, no de MasterShield.** Cuando den
-  acceso a la suya hay que correr `mapear_kommo.py` y `preparar_kommo.py` de
-  nuevo: los IDs del YAML son de esta cuenta y no sirven en otra.
+  acceso a la suya, el procedimiento está escrito en
+  `docs/mudanza-a-la-cuenta-real.md` y son tres comandos: `--revisar`, correrlo,
+  `--verificar`. El script descubre la cuenta y el embudo solos, crea etapas y
+  campos, y carga el catálogo de precios. Probado de punta a punta.
+- [ ] **Qué pedirle a MasterShield antes de la mudanza:** un usuario para la
+  integración con permiso de **archivos** —es un scope aparte y sin él las fotos
+  no se adjuntan—, el token de larga duración, a quién se le asignan las tareas,
+  y los precios del mes en curso.
 
 ## Del documento del 4 de septiembre de 2026
 
@@ -231,6 +237,21 @@ primer mensaje, este es el primer parámetro a mirar.
 - [ ] Horario de atención real, en hora de Ecuador. Por ahora 09:00–18:00 de
   lunes a viernes, que es un default, no un dato del cliente.
 - [ ] Manejo del riesgo de rotura térmica (ver CLAUDE.md).
+
+## Que MasterShield edite sus propios precios
+
+- [x] **El catálogo de Kommo queda cargado** con una fila por calidad, precio
+  normal, oferta especial y el SKU que enlaza cada fila al producto interno.
+  Kommo trae ese catálogo de fábrica, así que no hay que enseñarles ninguna
+  herramienta nueva: es una pantalla que ya usan.
+- [ ] **Que el agente lea los precios de ahí en vez del YAML.** Medio día, con
+  tres guardarraíles: cache corto, validación de rango —un precio en cero o diez
+  veces el anterior se rechaza— y el YAML como respaldo si Kommo no responde.
+  Conviene hacerlo junto con la mudanza, porque los IDs del catálogo cambian.
+- [ ] **Dónde va la vigencia mensual.** El campo "Oferta especial 1" no tiene
+  fecha. O se agrega un campo al catálogo y sigue venciendo sola, o se simplifica
+  a "si hay oferta cargada, rige" y ellos la borran — más fácil para ellos, pero
+  si se olvidan siguen ofreciendo en diciembre el precio de septiembre.
 
 ## Archivos del cliente
 

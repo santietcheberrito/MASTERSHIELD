@@ -72,6 +72,11 @@ zonas:
 # Formato AAAA-MM. Al cambiar de mes hay que actualizar esta linea y los
 # valores de `precio_especial`; si no se actualiza, el agente cotiza al precio
 # normal, que es el comportamiento seguro.
+#
+# No hace falta acordarse: `/metricas` avisa cinco dias antes de que venza, y
+# despues lo repite hasta que alguien lo actualice. Y ojo: los precios se leen
+# al arrancar el proceso, asi que editar este archivo sin redesplegar no cambia
+# nada.
 vigencia_precio_especial: "2026-09"
 
 
