@@ -34,11 +34,12 @@ def test_bajo_el_minimo_de_quito_no_se_puede_vender():
     assert "5 m²" in p.motivo
 
 
-def test_el_minimo_de_otras_ciudades_es_cuatro_veces_mas_alto():
-    """Los mismos 12 m² se venden en Quito y no en Ambato."""
+def test_el_minimo_sube_con_la_distancia():
+    """Los mismos 12 m² se venden en Quito y no en Guayaquil: desde el
+    29/9/2026 el minimo va de 5 a 25 m2 en cinco escalones."""
     assert scoring.puntuar(datos(metros_cuadrados=12)).etapa != scoring.BAJO_MINIMO
     assert scoring.puntuar(
-        datos(zona="otra_ciudad", metros_cuadrados=12)
+        datos(zona="zona_verde", metros_cuadrados=12)
     ).etapa == scoring.BAJO_MINIMO
 
 
@@ -65,7 +66,7 @@ def test_una_constructora_urgente_puntua_mas_que_un_particular_explorando():
 @pytest.mark.parametrize("campo,mayor,menor", [
     ("urgencia", "inmediato", "explorando"),
     ("tipo_cliente", "constructora_o_arquitecto", "particular"),
-    ("zona", "quito_y_valles", "otra_ciudad"),
+    ("zona", "quito_y_valles", "zona_roja"),
 ])
 def test_cada_eje_ordena_como_corresponde(campo, mayor, menor):
     base = {"metros_cuadrados": 25, "urgencia": "semanas",

@@ -13,22 +13,47 @@ campos:
   nombre:
     descripcion: "Como se llama la persona. Se pide al principio y se usa despues"
     tipo: texto
-    requerido: false
+    requerido: true
 
   linea:
     descripcion: "Arquitectonico (vidrio de inmuebles) o vehicular (autos)"
     valores: [arquitectonico, vehicular]
     requerido: true
 
+  # Cinco zonas de venta desde el 29/9/2026 ("UBICACIONES Y PRECIOS MS 2027"):
+  # cada una con su minimo de instalacion y su tabla de precios. No la elige el
+  # modelo: se deduce de la ciudad (app/ubicaciones.py).
   zona:
-    descripcion: "Donde se hace el trabajo. Define el minimo de venta y el precio"
-    valores: [quito_y_valles, otra_ciudad, fuera_del_pais]
+    descripcion: >-
+      Donde se hace el trabajo. Define el minimo de instalacion y el precio.
+      Sale de la ciudad, no se pregunta aparte
+    valores: [quito_y_valles, pichincha_cercana, zona_azul, zona_verde, zona_roja,
+              galapagos, fuera_del_pais]
     requerido: true
+
+  # La zona es una categoria de precio: "Cuenca" y "Manta" son las dos
+  # otra_ciudad. Sin este campo el nombre real se perdia, el agente no tenia con
+  # que completar "registramos {ciudad}" y volvia a preguntarla aunque ya la
+  # supiera (16/9/2026), y el asesor recibia el lead sin saber adonde ir.
+  ciudad:
+    descripcion: "La ciudad tal como la dijo la persona: Cuenca, Manta, Quito"
+    tipo: texto
+    requerido: false
 
   objetivo:
     descripcion: "Que necesita resolver. Mapea uno a uno con el producto"
     valores: [control_solar, privacidad, seguridad]
     requerido: true
+
+  superficie:
+    # Control solar son dos productos: ventanas y techos de vidrio. Sin esto no
+    # se sabe cual se vende, y el de techos todavia no tiene precio por chat.
+    descripcion: >-
+      Solo si el objetivo es control solar. ventanas: vidrio vertical (ventanas,
+      ventanales, puertas de vidrio). techo: vidrio horizontal (pergola,
+      claraboya, tragaluz, techo de vidrio)
+    valores: [ventanas, techo]
+    requerido: false
 
   aplicacion:
     descripcion: "Donde se instala"
@@ -46,9 +71,12 @@ campos:
     requerido: false
 
   garantia_anios:
-    descripcion: "Garantia del material elegida. Cambia el precio"
+    descripcion: "Con cual de las dos garantias quiere que el asesor arme el presupuesto. Cambia el precio"
     valores: [10, 5]
-    requerido: false   # solo control solar y privacidad
+    # No va en `requeridos_por_linea` porque depende del producto: la pide
+    # `finalizar_calificacion` cuando el producto tiene mas de una calidad
+    # (control solar y privacidad). Seguridad tiene una sola.
+    requerido: false
 
   modelo_vehiculo:
     descripcion: "Modelo del auto. Define el tipo de vehiculo y la cantidad de material"
@@ -65,11 +93,11 @@ campos:
     # telefono. La descripcion es lo que ve el modelo, y decir "visita tecnica"
     # aca lo llevaba a preguntar por algo que despues no puede agendar.
     #
-    # Dia y hora, tal como lo diga la persona: "el jueves por la mañana" o
-    # "manana despues de las 3". No se normaliza, porque es lo que el asesor va
-    # a leer antes de marcar.
-    descripcion: "Que dia y en que horario prefiere que lo llame un asesor"
-    tipo: texto
+    # Una franja y no un dia con hora: lo decidio MasterShield en la reunion del
+    # 11/9/2026. Se le ofrece elegir entre la mañana y la tarde, en vez de que
+    # la persona proponga un horario que despues el asesor no puede cumplir.
+    descripcion: "Si prefiere que un asesor lo llame en la mañana o en la tarde"
+    valores: [manana, tarde]
     requerido: false
 
   tipo_cliente:
@@ -82,17 +110,49 @@ campos:
     valores: [inmediato, semanas, explorando]
     requerido: false
 
-# Campos sin los cuales la calificacion no sirve, segun la linea. El handoff es
-# telefonico: sin telefono no hay a quien llamar, por mas completo que este el
-# resto.
-# `disponibilidad` es requerida por una razon operativa, no de puntaje: sin ella
+# `referencia` no es un campo: se cumple con `metros_cuadrados` guardado o con
+# al menos una foto o documento que haya mandado el cliente. MasterShield la pide
+# "en metros o fotografias", y las dos sirven para seguir.
+#
+# Lo que tiene que estar antes de dar el precio, EN ESTE ORDEN. Sale de la lista
+# que definio MasterShield el 11/9/2026 —nombre, pedido, referencia, ciudad, y
+# recien ahi los precios del mes— con un cambio pedido ese mismo dia: la ciudad
+# se pregunta junto con el nombre, en la bienvenida. `consultar_precio` se niega
+# mientras falte algo y devuelve lo que falta en este orden, asi el agente
+# pregunta lo primero que falta y no salta pasos.
+antes_del_precio: [nombre, zona, linea, objetivo, referencia]
+
+# Modo rapido: cuando la persona insiste con el precio (lo pidio en dos mensajes
+# o mas), solo se le pregunta la ciudad y que producto busca, se le dan los
+# precios y se le ofrece la llamada de un asesor. Pedido de MasterShield del
+# 14/9/2026, despues de la prueba de Pablo: alguien apurado no tiene que pasar
+# por todo el relevamiento. El asesor completa el resto en la llamada.
+antes_del_precio_rapido: [zona, linea, objetivo]
+
+# Campos sin los cuales la calificacion no sirve, segun la linea, tambien en el
+# orden en que se piden. El handoff es telefonico: sin telefono no hay a quien
+# llamar, por mas completo que este el resto.
+# `disponibilidad` dejo de ser requerida el 15/9/2026: MasterShield saco la
+# pregunta de mañana o tarde. Antes lo era por una razon operativa: sin ella
 # el agente cerraba, sincronizaba, y despues el cliente contestaba el horario y
 # volvia a cerrar. El lead entraba al tablero con un puntaje y a los sesenta
 # segundos con otro, dejando dos notas. Pedirla antes de cerrar hace que el
 # cierre ocurra una sola vez.
 requeridos_por_linea:
-  arquitectonico: [linea, zona, objetivo, metros_cuadrados, telefono, disponibilidad]
-  vehicular: [linea, zona, modelo_vehiculo, telefono, disponibilidad]
+  arquitectonico: [nombre, zona, linea, objetivo, referencia, telefono]
+  vehicular: [nombre, zona, linea, modelo_vehiculo, telefono]
+
+# Lo minimo para cerrar en modo rapido: a quien llamar, cuando, y de que se trata.
+requeridos_por_linea_rapido:
+  arquitectonico: [zona, linea, objetivo, telefono]
+  vehicular: [zona, linea, telefono]
+
+# Lo que se suma segun el objetivo, dentro de una linea. Control solar
+# arquitectonico son dos productos distintos y sin la superficie el asesor no
+# sabe cual va a ofrecer.
+requeridos_por_objetivo:
+  arquitectonico:
+    control_solar: [superficie]
 
 # ---------------------------------------------------------------------------
 # Puntaje
@@ -109,9 +169,15 @@ requeridos_por_linea:
 # `desde` se cumpla.
 # ---------------------------------------------------------------------------
 pesos:
+  # A mas lejos, mas friccion: sube el minimo de instalacion y sube el precio.
+  # Provisorio hasta calibrar con ventas reales.
   zona:
-    quito_y_valles: 20      # minimo de 5 m2, precio estandar
-    otra_ciudad: 8          # minimo de 20 m2 y recargo: mucha mas friccion
+    quito_y_valles: 20      # minimo de 5 m2
+    pichincha_cercana: 16   # minimo de 10 m2
+    zona_azul: 12           # minimo de 15 m2
+    zona_verde: 8           # minimo de 20 m2
+    zona_roja: 5            # minimo de 25 m2
+    galapagos: 0            # no se atiende
     fuera_del_pais: 0
 
   metros_cuadrados:

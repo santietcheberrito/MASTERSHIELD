@@ -18,6 +18,8 @@ COPY migrations/ ./migrations/
 COPY scripts/ ./scripts/
 COPY prompts/ ./prompts/
 COPY config/ ./config/
+# El video que acompaña a las fichas de producto.
+COPY media/ ./media/
 
 # Usuario sin privilegios.
 RUN useradd --create-home --uid 1000 agente && chown -R agente:agente /app

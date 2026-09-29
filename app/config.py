@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from functools import lru_cache
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -81,12 +81,26 @@ class Settings(BaseSettings):
     # asi cada mensaje nuevo lo reinicia y una rafaga se contesta como un solo
     # turno. Ver app/humanizacion.py.
     #
-    # El cliente arranco pidiendo 1 a 2 minutos y despues lo bajo a unos 20
-    # segundos: dos minutos de silencio en un chat de ventas se lee como que no
-    # hay nadie. Se sortea igual, porque un retraso fijo es un patron detectable.
-    demora_respuesta_min_seg: int = Field(default=18, gt=0, le=600)
-    demora_respuesta_max_seg: int = Field(default=22, gt=0, le=600)
-    horario_atencion: str = "09:00-18:00"
+    # El cliente arranco pidiendo 1 a 2 minutos, lo bajo a unos 20 segundos, y
+    # el 11/9/2026 pidio sacarlo: el tiempo de respuesta queda en lo que tarda
+    # el agente en razonar. Por eso el default es 0. Una rafaga ya no se junta
+    # en un turno antes de pensar, pero tampoco se contesta de a partes: si
+    # llega un mensaje mientras el agente trabaja, la respuesta vieja se
+    # descarta y el turno se rehace con todo (supersesion, app/worker.py).
+    #
+    # El 15/9/2026 volvio una espera corta, de 8 a 12 segundos. Sin ella, quien
+    # escribe en rafagas veia el mensaje leido al instante y el "escribiendo"
+    # prenderse y apagarse con cada turno descartado. El cliente confirmo que
+    # unos 20 segundos de respuesta estan bien: con el modelo en "minimal", la
+    # espera mas el razonamiento quedan en ese orden.
+    #
+    # 15/9/2026, tarde: con el prompt corto y el modelo en "low" la espera baja a
+    # 4 a 6 segundos, para que la respuesta total quede cerca de los 20.
+    demora_respuesta_min_seg: int = Field(default=4, ge=0, le=600)
+    demora_respuesta_max_seg: int = Field(default=6, ge=0, le=600)
+    # La oficina de MasterShield, que es la que llama por telefono: lunes a
+    # viernes de 08:00 a 17:00 de Ecuador (confirmado el 15/9/2026).
+    horario_atencion: str = "08:00-17:00"
 
     # El cliente opera en Quito. La zona horaria no es un detalle de formato:
     # el horario de atencion y el agendado de la tarea de llamado se evaluan
@@ -104,6 +118,14 @@ class Settings(BaseSettings):
     # gpt-5: 1.25 USD por millon de tokens de entrada contra 3 de Sonnet, y 90%
     # de descuento sobre el prefijo cacheado, que es lo que este diseño explota.
     modelo_agente: str = "gpt-5"
+    # Cuanto razona el modelo antes de contestar: minimal, low, medium o high.
+    # "minimal" es unas siete veces mas rapido que "low" (15/9/2026). Si el
+    # agente empieza a seguir peor las instrucciones, se sube desde el .env.
+    #
+    # Volvio a "low" con el prompt corto (15/9/2026, tarde): "minimal" no seguia
+    # las instrucciones (no guardaba datos deducidos, inventaba precios) y con
+    # el contexto chico "low" baja a 5-10 segundos por llamada.
+    esfuerzo_razonamiento: str = "low"
     # Cada dato que el agente guarda consume una vuelta, y alguien que dice
     # "es para mi oficina, estoy en Guayaquil" deja cinco datos de golpe. Con
     # seis, ese turno se quedaba sin texto y la persona no recibia nada.
@@ -288,6 +310,48 @@ class Settings(BaseSettings):
             return False
         inicio, fin = self.horario
         return inicio <= momento.time() < fin
+
+    def cuando_llaman(self, momento: datetime | None = None) -> str:
+        """Cuando va a llamar el asesor, dicho como se le dice a un cliente.
+
+        El agente atiende siempre, pero el telefono lo atiende la oficina en su
+        horario. Decir "a la brevedad" un viernes a las nueve de la noche es
+        prometer algo que no pasa hasta el lunes, y la persona espera el sabado
+        al lado del telefono (pedido de MasterShield, 15/9/2026).
+        """
+        momento = (momento or datetime.now(self.zona)).astimezone(self.zona)
+        if self.esta_en_horario(momento):
+            return "a la brevedad"
+
+        inicio, _ = self.horario
+        # Antes de abrir un dia habil se llama ese mismo dia; si ya cerro, al
+        # dia habil siguiente, que despues del viernes es el lunes.
+        proximo = momento
+        if not (momento.weekday() < 5 and momento.time() < inicio):
+            proximo += timedelta(days=1)
+        while proximo.weekday() >= 5:
+            proximo += timedelta(days=1)
+
+        # Decir solo "mañana" deja a la persona preguntandose por que no la
+        # llaman hoy. El motivo es el horario de oficina, y decirlo evita esa
+        # duda (pedido de MasterShield, 23/9/2026).
+        porque = f", porque atendemos de lunes a viernes de {self.horario_legible}"
+        if proximo.date() == momento.date():
+            return f"hoy, en cuanto abra la oficina{porque}"
+        if momento.weekday() < 5 and proximo.date() == (momento + timedelta(days=1)).date():
+            return f"mañana{porque}"
+        return f"{DIAS_DE_LA_SEMANA[proximo.weekday()]}{porque}"
+
+    @property
+    def horario_legible(self) -> str:
+        """El horario como se le dice a un cliente: "08:00 a 17:00"."""
+        inicio, fin = self.horario
+        return f"{inicio:%H:%M} a {fin:%H:%M}"
+
+
+# Como se nombra el dia cuando se le dice a un cliente cuando lo llaman.
+DIAS_DE_LA_SEMANA = ("el lunes", "el martes", "el miércoles", "el jueves",
+                     "el viernes", "el sábado", "el domingo")
 
 
 @lru_cache

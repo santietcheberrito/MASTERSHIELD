@@ -68,7 +68,9 @@ def test_update_valido_se_registra(cliente, registrados):
     mensaje, demora = registrados[0]
     assert mensaje.identificador == "7"
     assert mensaje.id_externo == "telegram:7:42"
-    assert 18 <= demora <= 22, "la demora se sortea en el rango configurado"
+    s = obtener_settings()
+    assert s.demora_respuesta_min_seg <= demora <= s.demora_respuesta_max_seg, (
+        "la demora se sortea en el rango configurado")
 
 
 def test_update_que_no_es_mensaje_se_acepta_sin_registrar(cliente, registrados):

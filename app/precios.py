@@ -47,7 +47,6 @@ class Cotizacion:
     tipo: str = "exacto"
 
     precio_m2: float | None = None
-    recargo_m2: float = 0.0
     subtotal: float | None = None
     garantia_anios: int | None = None
 
@@ -69,15 +68,54 @@ class Cotizacion:
             self.precio_m2 = round(self.precio_m2, 2)
 
 
-# Que producto corresponde a lo que el cliente necesita. Vive aca y no en las
-# herramientas del agente porque lo usan tambien el documento del CRM y el
-# scoring, y tenerlo alla creaba un import circular.
-PRODUCTO_POR_OBJETIVO = {
-    ("arquitectonico", "control_solar"): "control_solar_arquitectonico",
-    ("arquitectonico", "privacidad"): "privacidad_arquitectonica",
-    ("arquitectonico", "seguridad"): "seguridad_arquitectonica",
-    ("vehicular", "seguridad"): "seguridad_vehicular",
-}
+# Los datos de la conversacion que eligen el producto, en el orden en que se
+# desempata. La linea sola ya alcanza para vehicular; el objetivo, para
+# privacidad y seguridad; control solar necesita ademas la superficie.
+_CLAVES_DEL_PRODUCTO = ("linea", "objetivo", "superficie")
+
+
+def producto_para(datos: dict[str, Any]) -> str | None:
+    """Que producto corresponde a lo que el cliente necesita, o None si no alcanza.
+
+    Se filtra el catalogo por cada dato hasta que queda uno solo. Con una tabla
+    fija, sumar un producto era tocar codigo en tres lugares; asi es agregarlo
+    al YAML. Vive aca y no en las herramientas porque lo usa tambien el
+    documento del CRM, y tenerlo alla creaba un import circular.
+    """
+    candidatos = _candidatos(datos)
+    return candidatos[0]["id"] if len(candidatos) == 1 else None
+
+
+def producto_para_cotizar(datos: dict[str, Any]) -> str | None:
+    """El producto cuyo precio corresponde, aunque no se sepa cual de dos es.
+
+    Control solar para ventanas y para techos cuestan lo mismo, asi que para
+    decir el precio no hace falta saber la superficie. Se compara el precio y no
+    se asume: si algun dia dejan de costar lo mismo, esto devuelve None y el
+    agente vuelve a preguntar antes de dar un numero.
+    """
+    candidatos = _candidatos(datos)
+    if not candidatos:
+        return None
+    primero = candidatos[0]
+    mismo_precio = all(
+        (p["cotizable"], p.get("tabla_de_precios"))
+        == (primero["cotizable"], primero.get("tabla_de_precios"))
+        for p in candidatos
+    )
+    return primero["id"] if len(candidatos) == 1 or mismo_precio else None
+
+
+def _candidatos(datos: dict[str, Any]) -> list[dict[str, Any]]:
+    """Los productos que siguen en pie con lo que se sabe hasta ahora."""
+    candidatos = configuracion()["productos"]
+    for clave in _CLAVES_DEL_PRODUCTO:
+        if len(candidatos) <= 1:
+            break
+        if datos.get(clave) is None:
+            break  # sin ese dato no se puede desempatar mas
+        candidatos = [p for p in candidatos if p.get(clave) == datos[clave]]
+    return candidatos
 
 
 def _producto(id_producto: str) -> dict[str, Any] | None:
@@ -87,23 +125,39 @@ def _producto(id_producto: str) -> dict[str, Any] | None:
     return None
 
 
-def _opcion(producto: dict[str, Any], garantia_anios: int | None) -> dict[str, Any] | None:
-    opciones = producto.get("opciones") or []
-    if not opciones:
-        return None
+def opciones_de(producto: dict[str, Any], zona: str | None) -> list[dict[str, Any]]:
+    """Las calidades con su precio, que desde el 29/9/2026 viven en la zona.
+
+    Cada producto declara de que tabla come y cada zona trae esa tabla con sus
+    propios valores: el mismo material cuesta 42 en Quito y 55 en Guayaquil, sin
+    formula que los relacione.
+    """
+    datos_zona = (configuracion()["zonas"] or {}).get(zona or "")
+    if not datos_zona:
+        return []
+    tabla = producto.get("tabla_de_precios")
+    return ((datos_zona.get("precios") or {}).get(tabla)) or []
+
+
+def _opcion(producto: dict[str, Any], zona: str | None,
+            garantia_anios: int | None) -> dict[str, Any] | None:
     if garantia_anios is None:
         return None
-    for opcion in opciones:
+    for opcion in opciones_de(producto, zona):
         if opcion["garantia_anios"] == garantia_anios:
             return opcion
     return None
 
 
-def garantias_disponibles(id_producto: str) -> list[int]:
+def garantias_disponibles(id_producto: str, zona: str | None = None) -> list[int]:
+    """Las garantias del producto. Son las mismas en todas las zonas: si no se
+    sabe la zona, alcanza con mirar cualquiera que se atienda."""
     producto = _producto(id_producto)
     if not producto:
         return []
-    return [o["garantia_anios"] for o in producto.get("opciones") or []]
+    if zona is None:
+        zona = next((z for z, d in configuracion()["zonas"].items() if d.get("atiende")), None)
+    return [o["garantia_anios"] for o in opciones_de(producto, zona)]
 
 
 @dataclass
@@ -114,6 +168,7 @@ class Calidad:
     precio_normal: float
     precio_especial: float | None
     vida_util_anios: list[int] | None = None
+    vida_util_hasta_anios: int | None = None
 
 
 @dataclass
@@ -129,7 +184,6 @@ class Precios:
     # asesor, asi que el precio es un piso.
     tipo: str = "exacto"
     calidades: list[Calidad] = field(default_factory=list)
-    recargo_m2: float = 0.0
     minimo_m2: float | None = None
     descuento_pago_contado: int | None = None
     incluye: list[str] = field(default_factory=list)
@@ -169,16 +223,24 @@ def informar_precios(
     if producto["cotizable"] == "ninguno":
         return Precios(
             False,
-            motivo="este producto lo cotiza un asesor",
+            motivo=producto.get("sin_precio_por_chat") or "este producto lo cotiza un asesor",
             producto=producto["nombre"],
             datos_faltantes=list(producto.get("datos_requeridos") or []),
         )
 
-    # La zona no cambia el precio de lista pero si el recargo y el minimo, y el
-    # minimo es lo primero que hay que decirle a alguien de otra provincia.
+    # La zona define el precio Y el minimo: desde el 29/9/2026 cada una tiene su
+    # propia tabla, sin formula que las relacione. Sin zona no hay precio que
+    # dar: antes se podia porque el precio de lista era uno solo.
     datos_zona = cfg["zonas"].get(zona) if zona else None
     if zona and datos_zona is None:
         return Precios(False, motivo=f"zona desconocida: {zona!r}")
+    if datos_zona is None:
+        return Precios(
+            False,
+            motivo="sin la ciudad no se puede dar el precio: cada zona tiene el suyo",
+            producto=producto["nombre"],
+            datos_faltantes=["zona"],
+        )
     if datos_zona is not None and not datos_zona["atiende"]:
         return Precios(
             False,
@@ -192,28 +254,23 @@ def informar_precios(
     # teniendo que sostenerlo o desdecirse delante del cliente.
     especial_vigente = _especial_vigente(cfg, hoy)
 
-    # El recargo de provincias entra en el precio, no va como dato suelto.
-    # Devolverlo aparte obligaba a sumarlo a quien lea la respuesta, y el agente
-    # tiene prohibido hacer cuentas: dijo 37 en Guayaquil cuando son 47, y el
-    # control de precios lo dejo pasar porque 37 si venia de aca. El precio por
-    # m2 de una zona ES con su recargo.
-    recargo = (datos_zona or {}).get("recargo_m2", 0) or 0
-
-    def _con_recargo(valor):
-        return None if valor is None else round(valor + recargo, 2)
+    # Cada producto dice de que tabla de la zona come: control solar y privacidad
+    # comparten una, seguridad tiene la suya. Es como los agrupa el cliente en su
+    # lista, y evita repetir cinco veces los mismos numeros.
+    tabla = producto.get("tabla_de_precios")
+    opciones = ((datos_zona.get("precios") or {}).get(tabla)) or []
 
     # Seguridad no tiene precio normal ni especial sino un piso —`precio_desde`—
     # porque el nivel lo define un asesor. Es la misma forma con otro nombre.
     calidades = [
         Calidad(
             garantia_anios=o["garantia_anios"],
-            precio_normal=_con_recargo(o.get("precio_normal", o.get("precio_desde"))),
-            precio_especial=_con_recargo(
-                o.get("precio_especial") if especial_vigente else None
-            ),
+            precio_normal=o.get("precio_normal", o.get("precio_desde")),
+            precio_especial=o.get("precio_especial") if especial_vigente else None,
             vida_util_anios=o.get("vida_util_anios"),
+            vida_util_hasta_anios=o.get("vida_util_hasta_anios"),
         )
-        for o in producto.get("opciones") or []
+        for o in opciones
         if o.get("precio_normal") is not None or o.get("precio_desde") is not None
     ]
 
@@ -223,10 +280,7 @@ def informar_precios(
         zona=zona or "",
         tipo=producto["cotizable"],
         calidades=calidades,
-        # Informativo: sirve para explicar por que en provincias es mas caro,
-        # no para sumarlo. Ya esta adentro del precio de cada calidad.
-        recargo_m2=recargo,
-        minimo_m2=(datos_zona or {}).get("minimo_m2"),
+        minimo_m2=datos_zona.get("minimo_m2"),
         descuento_pago_contado=cfg.get("descuento_efectivo_transferencia"),
         incluye=list(cfg.get("incluye") or []),
         motivo="" if calidades else "el producto no tiene precios cargados",
@@ -300,11 +354,11 @@ def cotizar(
         )
 
     # --- precio -------------------------------------------------------------
-    opcion = _opcion(producto, garantia_anios)
+    opcion = _opcion(producto, zona, garantia_anios)
     if opcion is None:
-        disponibles = garantias_disponibles(id_producto)
-        if len(disponibles) == 1:
-            opcion = producto["opciones"][0]
+        opciones = opciones_de(producto, zona)
+        if len(opciones) == 1:
+            opcion = opciones[0]
             garantia_anios = opcion["garantia_anios"]
         else:
             return Cotizacion(
@@ -332,19 +386,8 @@ def cotizar(
             base = opcion["precio_normal"]
         tipo = "exacto"
 
-    recargo = datos_zona["recargo_m2"]
-    if recargo and datos_zona.get("recargo_aplica_a_todos") is None and tipo == "desde":
-        # No está confirmado si el recargo de otras ciudades aplica también a
-        # seguridad arquitectónica. Mientras no se sepa, no se inventa el número.
-        return Cotizacion(
-            False,
-            motivo="falta confirmar el recargo de otras ciudades para este producto",
-            producto=producto["nombre"],
-            zona=zona,
-            metros=metros,
-        )
-
-    precio_m2 = base + recargo
+    # Ya no hay recargo que sumar: el precio de la zona ES el precio.
+    precio_m2 = base
 
     return Cotizacion(
         puede_cotizar=True,
@@ -353,7 +396,6 @@ def cotizar(
         metros=metros,
         tipo=tipo,
         precio_m2=precio_m2,
-        recargo_m2=recargo,
         subtotal=precio_m2 * metros,
         garantia_anios=garantia_anios,
         descuento_pago_contado=cfg["descuento_efectivo_transferencia"],

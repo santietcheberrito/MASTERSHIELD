@@ -365,7 +365,7 @@ def test_la_bienvenida_sale_del_archivo():
     """Es texto de marca: MasterShield lo edita sin tocar código."""
     mensajes = worker.bienvenida()
     assert len(mensajes) >= 2
-    assert "MasterShield" in mensajes[0]
+    assert any("MASTERSHIELD" in m.upper() for m in mensajes)
     assert "gusto" in mensajes[-1].lower(), "la última pregunta el nombre"
 
 
@@ -497,8 +497,9 @@ async def test_el_indicador_del_segundo_mensaje_se_enciende_despues_de_un_respir
          patch.object(w.asyncio, "sleep", _dormir):
         await w._enviar_partes(turno, ["uno", "dos", "tres"])
 
-    # El primero no espera: no hay nada que apagar todavía.
-    assert ordenes[0] == ("indicador", 1, 4.0)
+    # El primero no espera el respiro, y su pausa es corta: el indicador ya se
+    # encendió al empezar el turno, mientras el agente pensaba (15/9/2026).
+    assert ordenes[0] == ("indicador", 1, w.PAUSA_PRIMER_MENSAJE)
     # Los siguientes sí, y el respiro sale de la espera en vez de sumarse.
     assert ordenes[2] == ("indicador", 2, 2.8)
     assert ordenes[4] == ("indicador", 3, 2.8)

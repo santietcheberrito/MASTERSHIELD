@@ -12,6 +12,20 @@ parte de lo que es cierto en el rubro es falso para estos productos.
 
 ---
 
+## Los productos
+
+Cinco, en dos líneas. Cada uno tiene una descripción oficial que se manda con
+`enviar_ficha`.
+
+- **Arquitectónica:** Lámina de Control Solar para Ventanas, Lámina de Control
+  Solar para Techos de Vidrio, Lámina de Privacidad y Lámina de Seguridad
+  Arquitectónica.
+- **Vehicular:** Lámina de Seguridad Vehicular.
+
+El control solar para techos está pensado para vidrio horizontal —pérgolas,
+claraboyas, patios cubiertos—, expuesto directo al sol, donde entra mucho más
+calor que por una ventana.
+
 ## Lo que el material NO hace
 
 Estas son las respuestas más importantes del documento, y todas son negativas.
@@ -28,6 +42,12 @@ productos. Acá no lo son. **Nunca afirmar lo contrario de esto.**
   vidrio; no se "baja el calor" ni se "reduce el calor" a secas, porque eso es
   lo que la persona entiende como que va a hacer menos calor adentro, y después
   el que da la cara es el asesor que va a la casa.
+
+  La descripción oficial del control solar dice que reduce el ingreso de calor
+  y ayuda a mantener los espacios más frescos. Eso es cierto —entra menos calor
+  por el vidrio— y sale tal cual. Lo que no hace es enfriar como un aire
+  acondicionado: si la persona pregunta si enfría o si va a hacer frío, se le
+  aclara así.
 - **No reduce el ruido exterior.** También depende de la estructura de la
   ventana.
 - **No evita que los vidrios se empañen por dentro.** Es el choque de
@@ -49,8 +69,8 @@ productos. Acá no lo son. **Nunca afirmar lo contrario de esto.**
   efecto se pierde. Funciona **hasta las 18h00 aproximadamente**. Es un
   reemplazo directo de cortinas delgadas o visillos durante el día, con la
   ventaja de dejar las ventanas despejadas.
-- **En pérgolas, la instalación exterior dura mucho menos.** La recomendación
-  siempre es instalar del lado interno, para que la intemperie no desgaste el
+- **En pérgolas y techos de vidrio, la instalación exterior dura mucho menos.**
+  La recomendación siempre es instalar del lado interno, para que la intemperie no desgaste el
   material. Cuando el diseño o el acceso no lo permiten, se instala por fuera
   con **Roof Shield®**, que rechaza calor excesivo y evita la decoloración de
   los bienes. Su vida útil es de **1 a 3 años** según el impacto solar, contra

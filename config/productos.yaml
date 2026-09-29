@@ -35,31 +35,125 @@ incluye:
 
 # Zonas. No son regiones geograficas: son las dos categorias con las que el
 # cliente cotiza, mas el descarte. `zona` se releva con esta granularidad.
+# Zonas de venta. Son las cinco categorias con las que MasterShield cotiza desde
+# el documento "UBICACIONES Y PRECIOS MS 2027", mas los dos descartes.
+#
+# Hasta el 29/9/2026 eran dos —Quito y "otra ciudad"— con un recargo plano de
+# USD 10 por m2 sobre el precio de lista. Ese modelo se termino: ahora cada zona
+# tiene su propio minimo de instalacion Y su propia tabla de precios, que no
+# siguen ninguna formula. En verde la calidad de 5 años pasa de 32 a 45, no a 42.
+#
+# Los precios van agrupados como los agrupa el cliente: control solar y
+# privacidad comparten tabla, seguridad tiene la suya. Cada producto declara de
+# que tabla come (`tabla_de_precios`).
+#
+# Verde y rojo tienen los MISMOS precios a proposito: lo que cambia es el minimo
+# (20 contra 25 m2). Confirmado por el cliente el 29/9/2026.
 zonas:
   quito_y_valles:
-    nombre: "Quito y valles cercanos"
+    nombre: "Quito y valles"
+    color: amarillo
     atiende: true
     minimo_m2: 5
-    recargo_m2: 0
-    # Regla, decidida para simplificar: todo lo que este en Quito y sus valles
-    # cuenta como Quito. No hace falta una lista cerrada de localidades; si el
-    # cliente nombra un valle, es zona estandar.
+    precios:
+      control_solar_y_privacidad:
+        - garantia_anios: 10
+          vida_util_hasta_anios: 15
+          precio_normal: 42
+          precio_especial: 37
+        - garantia_anios: 5
+          vida_util_hasta_anios: 8
+          precio_normal: 32
+          precio_especial: 25
+      seguridad:
+        - garantia_anios: 10
+          precio_desde: 24
 
-  otra_ciudad:
-    nombre: "Otras ciudades del pais"
+  pichincha_cercana:
+    nombre: "Pichincha, zonas cercanas"
+    color: amarillo
     atiende: true
-    # El minimo es cuatro veces mas alto que en Quito: es el filtro de
-    # calificacion mas duro que tiene el negocio.
+    minimo_m2: 10
+    precios:
+      control_solar_y_privacidad:
+        - garantia_anios: 10
+          vida_util_hasta_anios: 15
+          precio_normal: 48
+          precio_especial: 39
+        - garantia_anios: 5
+          vida_util_hasta_anios: 8
+          precio_normal: 35
+          precio_especial: 29
+      seguridad:
+        - garantia_anios: 10
+          precio_desde: 25
+
+  zona_azul:
+    nombre: "Imbabura, Bolivar, Cotopaxi, Napo, Tungurahua y Santo Domingo"
+    color: azul
+    atiende: true
+    minimo_m2: 15
+    precios:
+      control_solar_y_privacidad:
+        - garantia_anios: 10
+          vida_util_hasta_anios: 15
+          precio_normal: 52
+          precio_especial: 45
+        - garantia_anios: 5
+          vida_util_hasta_anios: 8
+          precio_normal: 39
+          precio_especial: 35
+      seguridad:
+        - garantia_anios: 10
+          precio_desde: 29
+
+  zona_verde:
+    nombre: "Chimborazo, Cañar, Azuay, Guayas, Los Rios, Manabi y Esmeraldas"
+    color: verde
+    atiende: true
     minimo_m2: 20
-    recargo_m2: 10   # + USD 10 + IVA por m2, sobre el precio de lista
-    # Aplica a todos los productos cotizables, seguridad incluida. No sale de
-    # la lista original del cliente sino de una decision posterior: si alguna
-    # vez se confirma que seguridad tiene otro adicional, se cambia aca.
-    recargo_aplica_a_todos: true
+    precios:
+      control_solar_y_privacidad:
+        - garantia_anios: 10
+          vida_util_hasta_anios: 15
+          precio_normal: 55
+          precio_especial: 49
+        - garantia_anios: 5
+          vida_util_hasta_anios: 8
+          precio_normal: 45
+          precio_especial: 39
+      seguridad:
+        - garantia_anios: 10
+          precio_desde: 35
+
+  zona_roja:
+    nombre: "Carchi, Amazonia, El Oro, Loja y Santa Elena"
+    color: rojo
+    atiende: true
+    minimo_m2: 25
+    precios:
+      control_solar_y_privacidad:
+        - garantia_anios: 10
+          vida_util_hasta_anios: 15
+          precio_normal: 55
+          precio_especial: 49
+        - garantia_anios: 5
+          vida_util_hasta_anios: 8
+          precio_normal: 45
+          precio_especial: 39
+      seguridad:
+        - garantia_anios: 10
+          precio_desde: 35
+
+  # Los dos descartes. Galapagos no aparece en ninguna zona del documento y el
+  # cliente confirmo que no se atiende (29/9/2026).
+  galapagos:
+    nombre: "Galapagos"
+    atiende: false
 
   fuera_del_pais:
     nombre: "Fuera de Ecuador"
-    atiende: false   # descarte
+    atiende: false
 
 # El precio especial es una promocion mensual: el material del cliente lo llama
 # "Precio especial SEPTIEMBRE". Vencido el mes, el especial deja de existir y
@@ -80,41 +174,52 @@ zonas:
 vigencia_precio_especial: "2026-09"
 
 
+# Cada producto tiene su descripcion oficial en `prompts/fichas/<id>.txt`, que
+# el agente manda tal cual cuando preguntan por el.
+#
+# `linea`, `objetivo` y `superficie` son lo que usa `precios.producto_para` para
+# saber que producto corresponde a una conversacion: se filtra por esos campos
+# hasta que queda uno solo. Un producto nuevo se agrega aca, sin tocar codigo.
 productos:
-  - id: control_solar_arquitectonico
-    nombre: "Lámina de Control Solar Arquitectónico"
+  # Control solar son dos productos desde septiembre de 2026: uno para ventanas
+  # y otro para techos de vidrio, donde el sol pega de lleno. Se distinguen por
+  # `superficie`, que el agente pregunta cuando alguien pide control solar.
+  - id: control_solar_ventanas
+    nombre: "Lámina de Control Solar para Ventanas"
     linea: arquitectonico
     objetivo: control_solar
+    superficie: ventanas
     cotizable: exacto
-    opciones:
-      - garantia_anios: 10
-        precio_normal: 42
-        precio_especial: 37
-      - garantia_anios: 5
-        precio_normal: 32
-        precio_especial: 25
-    # Roof Shield(R) es este mismo producto instalado por el lado exterior, para
-    # pergolas donde el diseño no permite la instalacion interna. No es un
-    # quinto producto: el cliente confirmo que son 4. Vida util 1 a 3 años
-    # contra los 10 o 5 de la interna, asi que el agente recomienda siempre
-    # primero la interna.
+    # La vida util sale del texto de precios que mando MasterShield el 11/9/2026:
+    # "Calidad 10 Años de Garantía (Hasta 15 años de vida útil)" y la de 5 años
+    # hasta 8. El texto es el mismo para control solar y privacidad.
+    tabla_de_precios: control_solar_y_privacidad
+
+  - id: control_solar_techos
+    nombre: "Lámina de Control Solar para Techos de Vidrio"
+    linea: arquitectonico
+    objetivo: control_solar
+    superficie: techo
+    # Mismo precio que ventanas, por decision del cliente. El alias hace que sea
+    # el mismo dato y no una copia: al actualizar los precios de ventanas se
+    # actualizan los dos. Si algun dia se separan, se reemplaza el alias por una
+    # lista propia.
+    cotizable: exacto
+    tabla_de_precios: control_solar_y_privacidad
+    # Roof Shield(R) es la instalacion por el lado exterior, para pergolas donde
+    # el diseño no permite la interna. Vida util 1 a 3 años contra los 10 o 5
+    # de la interna, asi que el agente recomienda siempre primero la interna.
     variante_exterior:
       nombre: "Roof Shield®"
       vida_util_anios: [1, 3]
-      precio_m2: null   # A CONFIRMAR: mismo precio que la instalacion interna?
+      precio_m2: null   # A CONFIRMAR
 
   - id: privacidad_arquitectonica
     nombre: "Lámina de Privacidad Arquitectónica"
     linea: arquitectonico
     objetivo: privacidad
     cotizable: exacto
-    opciones:
-      - garantia_anios: 10
-        precio_normal: 42
-        precio_especial: 37
-      - garantia_anios: 5
-        precio_normal: 32
-        precio_especial: 25
+    tabla_de_precios: control_solar_y_privacidad
 
   - id: seguridad_arquitectonica
     nombre: "Lámina de Seguridad Arquitectónica"
@@ -124,9 +229,7 @@ productos:
     # adecuado lo sugiere un asesor segun la necesidad. El agente da un piso,
     # nunca un total cerrado.
     cotizable: desde
-    opciones:
-      - garantia_anios: 10
-        precio_desde: 24
+    tabla_de_precios: seguridad
 
   - id: seguridad_vehicular
     nombre: "Lámina de Seguridad Vehicular"

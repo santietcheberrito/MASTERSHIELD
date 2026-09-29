@@ -70,14 +70,25 @@ minutos del caché por defecto y se estaría pagando la escritura todo el tiempo
   con total seguridad a cada cliente. El archivo lo dice arriba de todo.
 - [ ] Confirmar vigencia: es de 2025. Marcas, garantías y formatos de rollo.
 
-### 3b. Catálogo: 4 productos, confirmado
+### 3b. Catálogo: 5 productos desde septiembre de 2026
 
-El cliente confirmó que son los 4 del sitio. Queda:
+Control solar se partió en dos: ventanas y techos de vidrio. Los otros tres
+siguen igual. Cada producto tiene su descripción oficial en `prompts/fichas/`,
+que el agente manda tal cual con `enviar_ficha`, y los arquitectónicos llevan
+el video de `media/video-productos.mp4` la primera vez.
 
-- [x] **Roof Shield®** — no es un quinto producto: es el control solar
-  instalado por el lado exterior. Queda como `variante_exterior` en
-  `productos.yaml`.
-- [ ] ¿Roof Shield tiene precio propio o el mismo que la instalación interna?
+- [x] Separar control solar en ventanas y techos (`superficie`).
+- [x] Fichas de producto enviadas palabra por palabra, sin repetirse.
+- [x] Video comprimido para WhatsApp y enviado una vez por conversación.
+- [x] Techos de vidrio: mismo precio y calidades que ventanas (decisión del
+  cliente, 10/9).
+- [x] El video lleva el mensaje del cliente como leyenda.
+- [x] La garantía (10 o 5 años) es requisito para cerrar cuando el producto
+  tiene dos calidades. En la prueba del 10/9 no se había ofrecido.
+- [ ] Roof Shield®: ¿sigue existiendo ahora que techos es un producto propio?
+- [ ] El clip definitivo con los 4 productos (hoy va el institucional, que
+  además dice "satisfación"). Se reemplaza con `scripts/preparar_video.py`.
+- [x] Probar el envío del video contra Meta (10/9, salió bien).
 - [ ] **Control solar vehicular** — el documento dice que lo venden, el sitio
   solo lista seguridad vehicular. Cuál de los dos está desactualizado.
 

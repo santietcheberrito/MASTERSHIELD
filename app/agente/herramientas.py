@@ -5,18 +5,24 @@ corre en Python. La separacion importa — todo lo que sea una regla de negocio
 (el minimo de venta, el precio, que campos son obligatorios) se decide aca y no
 en el prompt, para que el modelo no pueda hacer una excepcion porque el cliente
 insistio.
+
+Desde el 15/9/2026 ninguna herramienta escribe texto de la conversacion: eso lo
+hace solo el modelo, con las respuestas por situacion que recibe de la base
+(app/contexto.py). Lo unico que el codigo manda tal cual son bloques que el
+modelo nunca escribe: la lista de precios, las fichas y el video.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
-from app import db
+from app import db, fichas, textos, ubicaciones
 from app.calificacion import calificacion
 from app.config import obtener_settings
 from app.crm.sincronizacion import sincronizar
-from app.precios import PRODUCTO_POR_OBJETIVO, informar_precios
+from app.precios import informar_precios, producto_para_cotizar
 from app.telefono import normalizar
 
 logger = logging.getLogger(__name__)
@@ -32,9 +38,124 @@ logger = logging.getLogger(__name__)
 # no entra una instruccion elaborada.
 LARGO_MAXIMO_TEXTO = 200
 
+
+def _comparable(valor: Any) -> str:
+    return str(valor).strip().lower().replace("ñ", "n")
+
+
+# ---------------------------------------------------------------------------
+# Lo que falta, en orden
+# ---------------------------------------------------------------------------
+
+# Como se nombra cada paso cuando el agente tiene que preguntarlo.
+QUE_PREGUNTAR = {
+    "nombre": "el nombre de la persona, y la ciudad en la misma pregunta si tampoco la dijo",
+    "linea": "que necesita: si es para vidrios de un inmueble o para un vehiculo",
+    "objetivo": "que quiere resolver: calor, privacidad o seguridad",
+    "referencia": (
+        "una referencia del tamaño del trabajo, en metros aproximados o con fotos, "
+        "diciendo el minimo de instalacion de su ciudad"
+    ),
+    "zona": "la ciudad donde se haria la instalacion",
+    "superficie": "si el vidrio es de ventanas o de un techo, como una pergola o una claraboya",
+    "modelo_vehiculo": "el modelo del vehiculo",
+}
+
+# Como pide precio alguien por WhatsApp. Contar mensajes y no confiar en que el
+# modelo "note" la insistencia: la prueba de Pablo mostro que no la nota.
+_PIDE_PRECIO = re.compile(
+    r"\b(precios?|cu[aá]nto\s+(?:cuesta|sale|vale|cobran|es)|costos?|valor(?:es)?|"
+    r"cotiza\w*|tarifas?)\b",
+    re.IGNORECASE,
+)
+# Desde cuantos mensajes pidiendo precio la persona pasa a modo rapido.
+VECES_PARA_MODO_RAPIDO = 2
+
+
+def pide_precio(texto: str | None) -> bool:
+    return bool(_PIDE_PRECIO.search(texto or ""))
+
+
+async def esta_apurada(conversacion_id: int) -> bool:
+    """Si la persona pidio el precio en dos mensajes o mas.
+
+    Una vez que entra en modo rapido se queda: los mensajes no se borran.
+    """
+    filas = await db.consultar(
+        "SELECT contenido FROM mensajes WHERE conversacion_id = $1 AND rol = 'cliente'",
+        conversacion_id,
+    )
+    return sum(1 for f in filas if pide_precio(f["contenido"])) >= VECES_PARA_MODO_RAPIDO
+
+
+def requisitos_del_precio(datos: dict[str, Any], apurada: bool) -> list[str]:
+    """Lo que tiene que estar para dar el precio, en el orden en que se pide.
+
+    Lo usan `consultar_precio` para negarse y app/contexto.py para saber en que
+    paso esta la conversacion: si los dos no leyeran lo mismo, el agente podria
+    estar en un paso que la herramienta no reconoce.
+    """
+    antes = list(calificacion()["antes_del_precio_rapido" if apurada else "antes_del_precio"])
+    if datos.get("linea") == "vehicular":
+        # No se cotiza por chat: ni el objetivo ni los metros cambian eso.
+        antes = [c for c in antes if c not in ("objetivo", "referencia")]
+    # Control solar son dos productos: ventanas y techos. La superficie es parte
+    # del pedido y va antes de los metros (15/9/2026). En modo rapido no: la
+    # define el asesor.
+    if not apurada and datos.get("objetivo") == "control_solar" and "objetivo" in antes:
+        i = antes.index("objetivo") + 1
+        antes = [*antes[:i], "superficie", *antes[i:]]
+    return antes
+
+
+_MANDO_FOTOS = """
+    SELECT 1 FROM mensajes
+    WHERE conversacion_id = $1 AND rol = 'cliente' AND tipo IN ('imagen', 'documento')
+    LIMIT 1
+"""
+
+
+async def faltantes(conversacion_id: int, datos: dict[str, Any], campos: list[str]) -> list[str]:
+    """Los campos de `campos` que todavia no estan, en el mismo orden.
+
+    `referencia` no es un campo guardado: se cumple con los metros o con una
+    foto del cliente. La foto se busca en `mensajes` y no en `datos` porque es
+    lo que de verdad llego, y se consulta solo si no hay metros.
+    """
+    faltan = []
+    for campo in campos:
+        if campo == "referencia":
+            if datos.get("metros_cuadrados") in (None, "") and not await db.valor(
+                    _MANDO_FOTOS, conversacion_id):
+                faltan.append(campo)
+        elif datos.get(campo) in (None, ""):
+            faltan.append(campo)
+    return faltan
+
+
 # ---------------------------------------------------------------------------
 # guardar_dato
 # ---------------------------------------------------------------------------
+
+def linea_deducida(campo: str, valor: Any, datos: dict[str, Any]) -> str | None:
+    """La linea (inmueble o vehiculo) que se desprende de otro dato.
+
+    El modelo tenia que guardarla aparte y con razonamiento "minimal" no lo
+    hacia: Pablo dijo privacidad, ventanas de su casa y 13 m², y el precio se
+    trababa porque faltaba la linea (15/9/2026). No se le pide mas: se deduce.
+    """
+    if datos.get("linea"):
+        return None
+    if campo == "aplicacion":
+        return "vehicular" if valor == "vehiculo" else "arquitectonico"
+    if campo == "modelo_vehiculo":
+        return "vehicular"
+    if campo == "superficie":
+        return "arquitectonico"
+    if campo == "objetivo" and valor in ("control_solar", "privacidad"):
+        return "arquitectonico"
+    return None
+
 
 async def guardar_dato(conversacion_id: int, campo: str, valor: Any) -> dict[str, Any]:
     """Persiste un dato apenas el cliente lo menciona, no al final.
@@ -52,10 +173,15 @@ async def guardar_dato(conversacion_id: int, campo: str, valor: Any) -> dict[str
 
     valores = definicion.get("valores")
     if valores is not None and valor not in valores:
-        return {
-            "error": f"valor invalido para {campo!r}",
-            "valores_validos": valores,
-        }
+        # El modelo a veces manda "10" donde la lista dice 10, o "Mañana" donde
+        # dice manana. Es el mismo dato: rechazarlo le cuesta una vuelta y a
+        # veces no lo vuelve a intentar.
+        valor = next((v for v in valores if _comparable(v) == _comparable(valor)), None)
+        if valor is None:
+            return {
+                "error": f"valor invalido para {campo!r}",
+                "valores_validos": valores,
+            }
 
     if definicion.get("tipo") == "texto":
         valor = " ".join(str(valor).split())[:LARGO_MAXIMO_TEXTO]
@@ -109,6 +235,31 @@ async def guardar_dato(conversacion_id: int, campo: str, valor: Any) -> dict[str
         logger.error("guardar_dato sobre una conversacion inexistente: %s", conversacion_id)
         return {"error": "no se pudo guardar: la conversacion no existe"}
 
+    # La ciudad trae la zona puesta: son cinco, cada una con su minimo y su
+    # tabla de precios, y saber que Gualaceo es zona verde es un dato duro, no
+    # criterio del modelo (29/9/2026).
+    if campo == "ciudad":
+        zona = ubicaciones.zona_de(str(valor))
+        if zona and zona != datos.get("zona"):
+            datos = await db.valor(
+                "UPDATE conversaciones SET datos = datos || $2::jsonb "
+                "WHERE id = $1 RETURNING datos",
+                conversacion_id, {"zona": zona},
+            )
+            logger.info("zona deducida de la ciudad | conversacion=%s %s -> %s",
+                        conversacion_id, valor, zona)
+        elif not zona:
+            logger.warning("ciudad que no esta en la tabla de zonas | conversacion=%s %r",
+                           conversacion_id, valor)
+
+    linea = linea_deducida(campo, valor, datos)
+    if linea:
+        datos = await db.valor(
+            "UPDATE conversaciones SET datos = datos || $2::jsonb WHERE id = $1 RETURNING datos",
+            conversacion_id, {"linea": linea},
+        )
+        logger.info("linea deducida | conversacion=%s linea=%s", conversacion_id, linea)
+
     logger.info("dato guardado | conversacion=%s %s=%r", conversacion_id, campo, valor)
     resultado: dict[str, Any] = {"guardado": True, "campo": campo, "valor": valor, "datos_actuales": datos}
     if campo == "telefono" and normalizado is not None:
@@ -120,35 +271,52 @@ async def guardar_dato(conversacion_id: int, campo: str, valor: Any) -> dict[str
 # consultar_precio
 # ---------------------------------------------------------------------------
 
-
-
 async def consultar_precio(
     conversacion_id: int,
     zona: str | None = None,
+    introduccion: str | None = None,
 ) -> dict[str, Any]:
     """Los precios por m2 del producto que el cliente necesita.
 
-    No hace cuentas y no da totales. El cliente pidio expresamente que el
-    agente informe cuanto vale el metro cuadrado y que el calculo lo haga el
-    asesor en la visita tecnica, donde ademas se toman las medidas exactas.
+    No hace cuentas y no da totales: el agente informa cuanto vale el metro
+    cuadrado y el calculo lo hace el asesor en la visita tecnica.
 
-    Los metros se siguen relevando: hacen falta para el minimo de instalacion y
-    para que el vendedor sepa el tamaño del trabajo antes de llamar.
+    **El precio va al final.** Mientras falte algo del orden que definio
+    MasterShield la herramienta no lo da, aunque la persona lo pida primero:
+    devuelve lo que falta, en ese orden, y el agente lo pregunta con la
+    respuesta de la base que corresponde.
+
+    Con los datos completos, la lista oficial sale tal cual antes del mensaje
+    del modelo. El modelo nunca escribe un precio.
     """
     datos = await db.valor("SELECT datos FROM conversaciones WHERE id = $1", conversacion_id) or {}
 
-    linea = datos.get("linea")
     objetivo = datos.get("objetivo")
     zona = zona or datos.get("zona")
 
-    if not linea:
-        return {"puede_informar": False, "falta": ["linea"],
-                "mensaje": "todavia no se sabe si es arquitectonico o vehicular"}
+    apurada = await esta_apurada(conversacion_id)
+    faltan = await faltantes(
+        conversacion_id, {**datos, "zona": zona}, requisitos_del_precio(datos, apurada))
+    if faltan:
+        return {
+            "puede_informar": False,
+            "falta": faltan,
+            "modo_rapido": apurada,
+            "mensaje": (
+                "Todavia no se dan los precios. Lo siguiente es preguntar "
+                f"{QUE_PREGUNTAR.get(faltan[0], faltan[0])}. Si la persona pidio el "
+                "precio, use la respuesta precio_sin_datos (o modo_rapido): la "
+                "explicacion va una sola vez en la conversacion."
+            ),
+        }
 
-    id_producto = PRODUCTO_POR_OBJETIVO.get((linea, objetivo))
+    id_producto = producto_para_cotizar(datos)
     if id_producto is None:
+        if objetivo == "control_solar":
+            return {"puede_informar": False, "falta": ["superficie"],
+                    "mensaje": "falta saber si es para ventanas o para un techo de vidrio"}
         return {"puede_informar": False, "falta": ["objetivo"],
-                "mensaje": "falta saber que necesita resolver: control solar, privacidad o seguridad"}
+                "mensaje": "falta saber que necesita resolver: calor, privacidad o seguridad"}
 
     r = informar_precios(id_producto, zona)
 
@@ -168,6 +336,7 @@ async def consultar_precio(
             "precio_normal_m2_sin_iva": c.precio_normal,
             "precio_especial_m2_sin_iva": c.precio_especial,
             "vida_util_anios": c.vida_util_anios,
+            "vida_util_hasta_anios": c.vida_util_hasta_anios,
         }
         for c in r.calidades
     ]
@@ -182,27 +351,110 @@ async def consultar_precio(
         "como_decirlo": (
             "Son precios POR METRO CUADRADO y SIN IVA: se dicen con la frase "
             "'mas IVA'. NO multiplique por los metros, NO de un total y NO le "
-            "sume el IVA. El calculo lo hace el asesor en la visita, con las "
-            "medidas exactas."
+            "sume el IVA."
         ),
     }
 
     # El minimo es lo primero que hay que decir en provincias, donde es cuatro
     # veces mas alto y decide si la persona es cliente o no.
+    metros = datos.get("metros_cuadrados")
     if r.minimo_m2 is not None:
         respuesta["minimo_m2_de_la_zona"] = r.minimo_m2
-        metros = datos.get("metros_cuadrados")
         if metros is not None and metros < r.minimo_m2:
             respuesta["no_llega_al_minimo"] = True
             respuesta["metros_del_pedido"] = metros
-            respuesta["sugerencia"] = (
-                "preguntar si hay otro sector para sumar y llegar al minimo, "
-                "en vez de cortar la conversacion"
-            )
-    if r.recargo_m2:
-        respuesta["recargo_m2_por_la_zona"] = r.recargo_m2
+
+    # Por debajo del minimo no se dan los precios: primero se ve si suma
+    # superficie. Hasta el 16/9/2026 la lista salia igual y despues venia el
+    # aviso de que no llegaba, que es darle un valor que todavia no le sirve y
+    # despedirse; el cliente pidio conversarlo antes (Santiago, 16/9/2026).
+    if respuesta.get("no_llega_al_minimo"):
+        return {
+            "puede_informar": False,
+            "no_llega_al_minimo": True,
+            "producto": r.producto,
+            "minimo_m2_de_la_zona": r.minimo_m2,
+            "metros_del_pedido": metros,
+            "mensaje": (
+                f"Todavia NO se dan los precios: el minimo en esa zona es de "
+                f"{r.minimo_m2:g} m2 y el pedido es de {metros:g} m2. Use la respuesta "
+                "no_llega_al_minimo y pregunte si suma otro ambiente. Si suma y llega "
+                "al minimo, guarde los metros nuevos y vuelva a llamar a "
+                "consultar_precio: ahi si salen los precios."
+            ),
+        }
+
+    oferta = await db.valor(
+        "SELECT respuesta FROM respuestas WHERE clave = 'dar_precios' AND activa") or ""
+    respuesta["siguiente_paso"] = (
+        "Despues de la lista, su mensaje es solo la oferta de la llamada, tal cual: "
+        f"{oferta.strip()!r}. Ni precios ni lo que incluye: eso ya esta en la lista."
+    )
+
+    # Si esta misma lista ya le llego, no se repite: quien pregunta de nuevo por
+    # un precio quiere el dato, no el bloque entero.
+    if await textos.ya_enviado(conversacion_id, textos.lista_de_precios(respuesta)):
+        respuesta["lista_ya_enviada"] = True
+        respuesta["mensaje"] = (
+            "La persona ya recibio la lista de precios con estos valores y no se "
+            "vuelve a mandar. Si pregunta algo puntual, conteste con estos numeros."
+        )
+    else:
+        respuesta["se_envia_lista"] = True
+        respuesta["introduccion"] = " ".join(str(introduccion or "").split())[:LARGO_MAXIMO_TEXTO]
+        respuesta["mensaje"] = (
+            "Salen en este orden: su introduccion, la lista oficial y su mensaje. Su "
+            "mensaje va despues de la lista: no la anuncie, no la comente y no repita "
+            "ningun precio."
+        )
 
     return respuesta
+
+
+# ---------------------------------------------------------------------------
+# enviar_ficha
+# ---------------------------------------------------------------------------
+
+async def enviar_ficha(
+    conversacion_id: int, producto: str, introduccion: str | None = None
+) -> dict[str, Any]:
+    """Pide que salga la descripcion oficial de un producto.
+
+    No manda nada: la ficha la manda el worker, tal cual, antes de lo que el
+    modelo escriba. Aca solo se valida y se evita repetirla — alguien que ya
+    leyo el bloque entero y pregunta un detalle quiere el detalle, no el bloque
+    otra vez.
+    """
+    validos = fichas.disponibles()
+    if producto not in validos:
+        return {"error": f"no hay ficha para {producto!r}", "productos_validos": validos}
+
+    if await fichas.ya_enviada(conversacion_id, producto):
+        return {
+            "se_envia": False,
+            "ya_la_recibio": True,
+            "mensaje": (
+                "La persona ya recibio esta descripcion en esta conversacion. No "
+                "se manda de nuevo: conteste lo puntual con sus palabras, en una "
+                "o dos lineas."
+            ),
+        }
+
+    # La introduccion la escribe el modelo y sale antes del bloque: asiente lo
+    # que dijo la persona y presenta lo que viene. Se acota como cualquier
+    # texto libre.
+    introduccion = " ".join(str(introduccion or "").split())[:LARGO_MAXIMO_TEXTO]
+
+    return {
+        "se_envia": True,
+        "producto": fichas.nombre(producto),
+        "introduccion": introduccion,
+        "mensaje": (
+            "La introduccion sale primero y la descripcion oficial despues, tal "
+            "cual. No repita ni resuma la descripcion. Lo que usted escriba va "
+            "despues de ella: una linea corta con el paso siguiente."
+        ),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -210,11 +462,7 @@ async def consultar_precio(
 # ---------------------------------------------------------------------------
 
 async def finalizar_calificacion(conversacion_id: int) -> dict[str, Any]:
-    """Cierra el relevamiento. Se niega si falta algo sin lo cual no sirve.
-
-    El scoring y la carga a Kommo se enganchan aca (sesiones 5 y 3). Por ahora
-    marca la conversacion y deja el evento para auditoria.
-    """
+    """Cierra el relevamiento. Se niega si falta algo sin lo cual no sirve."""
     fila = await db.consultar_una(
         "SELECT datos, telefono, estado FROM conversaciones WHERE id = $1", conversacion_id
     )
@@ -224,9 +472,7 @@ async def finalizar_calificacion(conversacion_id: int) -> dict[str, Any]:
     # Ya se cerro antes. Se pregunta por el evento y no por el estado: una
     # conversacion `calificada` que recibe un mensaje vuelve a `activa` —tiene
     # que hacerlo, o el cliente que pregunta algo despues se queda sin
-    # respuesta— y entonces el estado deja de servir como marca. Pasa siempre:
-    # el agente cierra, el cliente dice "gracias", y al turno siguiente el
-    # agente cerraba de nuevo, con su nota duplicada en el lead.
+    # respuesta— y entonces el estado deja de servir como marca.
     ya_cerrada = await db.valor(
         "SELECT detalle->'datos' FROM eventos WHERE conversacion_id = $1 "
         "AND tipo = 'calificacion_finalizada' ORDER BY id DESC LIMIT 1",
@@ -234,9 +480,8 @@ async def finalizar_calificacion(conversacion_id: int) -> dict[str, Any]:
     )
 
     if ya_cerrada is not None:
-        # Si la persona siguio hablando y cambio algo —otro horario, mas
-        # metros— el CRM tiene que enterarse: el vendedor va a llamar con eso.
-        # Lo que no se repite nunca es la despedida.
+        # Si la persona siguio hablando y cambio algo —otro numero, mas metros—
+        # el CRM tiene que enterarse: el vendedor va a llamar con eso.
         if ya_cerrada != datos:
             logger.info("la calificacion cambio despues de cerrada, se actualiza "
                         "el CRM | conversacion=%s", conversacion_id)
@@ -257,8 +502,8 @@ async def finalizar_calificacion(conversacion_id: int) -> dict[str, Any]:
                 "datos_actualizados": True,
                 "mensaje": (
                     "Ya estaba cerrada y el dato nuevo se le paso al asesor. "
-                    "Confirme solo lo que cambio, en una linea. No repita el "
-                    "numero ni el horario ni la despedida entera."
+                    "Confirme solo lo que cambio, en una linea. No repita la "
+                    "confirmacion ni la despedida."
                 ),
             }
 
@@ -269,29 +514,39 @@ async def finalizar_calificacion(conversacion_id: int) -> dict[str, Any]:
             "ya_estaba_cerrada": True,
             "mensaje": (
                 "Esta conversacion ya se cerro y el asesor ya tiene los datos. "
-                "No repita la confirmacion ni el numero ni el horario: "
-                "despidase con una linea corta y nada mas."
+                "No repita la confirmacion. Si la persona pregunto algo, contestelo "
+                "en una o dos lineas; si solo agradecio, use la despedida final una "
+                "sola vez, y si ya salio, cerrar_sin_responder."
             ),
         }
 
     linea = datos.get("linea")
-    requeridos_por_linea = calificacion()["requeridos_por_linea"]
+    # En modo rapido se cierra con lo minimo: el asesor completa en la llamada.
+    apurada = await esta_apurada(conversacion_id)
+    requeridos_por_linea = calificacion()[
+        "requeridos_por_linea_rapido" if apurada else "requeridos_por_linea"]
     requeridos = requeridos_por_linea.get(linea)
     if requeridos is None:
         return {"finalizada": False, "falta": ["linea"],
                 "mensaje": "sin saber la linea no se puede cerrar"}
 
-    faltan = [c for c in requeridos if datos.get(c) in (None, "")]
+    por_objetivo = {} if apurada else (
+        (calificacion().get("requeridos_por_objetivo") or {}).get(linea) or {})
+    requeridos = [*requeridos, *(por_objetivo.get(datos.get("objetivo")) or [])]
+
+    faltan = await faltantes(conversacion_id, datos, requeridos)
     if faltan:
         return {
             "finalizada": False,
             "falta": faltan,
-            "mensaje": "faltan datos sin los cuales el vendedor no puede llamar",
+            "mensaje": (
+                "faltan datos sin los cuales el vendedor no puede llamar. Estan en "
+                "el orden en que se piden: pregunte primero el primero de la lista"
+            ),
         }
 
     # El telefono esta en `datos` pero no se pudo normalizar. Sin numero valido
-    # la calificacion no sirve: el asesor llama por telefono. Que el cliente lo
-    # confirme antes de cerrar, en vez de descubrirlo cuando alguien marque.
+    # la calificacion no sirve: el asesor llama por telefono.
     if telefono is None:
         return {
             "finalizada": False,
@@ -319,23 +574,16 @@ async def finalizar_calificacion(conversacion_id: int) -> dict[str, Any]:
     logger.info("calificacion finalizada | conversacion=%s", conversacion_id)
 
     # Si el CRM falla, la conversacion no se pierde: queda marcada para
-    # reintento y el agente cierra igual. El cliente no se tiene que enterar de
-    # que una integracion esta caida.
+    # reintento y el agente cierra igual.
     await sincronizar(conversacion_id)
 
     return {
         "finalizada": True,
         "datos": datos,
         "telefono_confirmado": telefono,
-        "disponibilidad": datos.get("disponibilidad"),
         "mensaje": (
-            "Calificacion cerrada. Al despedirse, envie un unico mensaje de confirmacion "
-            f"indicando que un asesor MS lo llamara ({datos.get('disponibilidad') or 'proximamente'}) "
-            # El numero se le repite como lo escribio la persona, no en E.164: el
-            # normalizado es para la base y para Kommo. Decirle "+59321234567" a
-            # alguien que escribio "2 1234567" suena a maquina leyendo un campo.
-            f"al numero {datos.get('telefono') or telefono}, tal como esta escrito aca, "
-            "y pida al cliente confirmar si el numero y el horario son correctos."
+            "Calificacion cerrada. Escriba la confirmacion (respuesta "
+            "confirmo_el_numero) y nada mas."
         ),
     }
 
@@ -362,7 +610,6 @@ async def escalar_a_humano(
     # Tambien sube al CRM: una derivacion tiene que aparecer en el tablero, o el
     # equipo no se entera de que alguien esta esperando.
     await sincronizar(conversacion_id)
-    # TODO: ademas notificar al equipo. Falta definir a quien y por que medio.
     return {"escalado": True, "motivo": motivo, "estado": estado}
 
 
@@ -372,11 +619,6 @@ async def escalar_a_humano(
 
 async def cerrar_sin_responder(conversacion_id: int, motivo: str) -> dict[str, Any]:
     """El agente decide que no hay nada que contestar, y eso queda registrado.
-
-    Existe para un caso puntual: un asesor estuvo conversando a mano, la pausa
-    vencio, y quedo un mensaje del cliente sin contestar. "Sin contestar" no
-    alcanza como criterio —un "gracias, perfecto" no es una consulta— y esa
-    diferencia no se puede escribir en SQL. La decide el agente.
 
     Sin esto, la unica forma de no responder era devolver texto vacio, que es
     indistinguible de un turno que fallo.
@@ -397,11 +639,7 @@ async def cerrar_sin_responder(conversacion_id: int, motivo: str) -> dict[str, A
 # ---------------------------------------------------------------------------
 
 def definiciones() -> list[dict[str, Any]]:
-    """Se generan desde `config/calificacion.yaml` para que no se desincronicen.
-
-    Si alguien agrega un campo al YAML, el modelo lo ve en la proxima llamada
-    sin que haya que tocar codigo.
-    """
+    """Se generan desde `config/calificacion.yaml` para que no se desincronicen."""
     campos = calificacion()["campos"]
     descripcion_campos = "\n".join(
         f"- {nombre}: {d['descripcion']}"
@@ -413,9 +651,9 @@ def definiciones() -> list[dict[str, Any]]:
         {
             "nombre": "guardar_dato",
             "descripcion": (
-                "Guarda un dato del cliente apenas lo menciona, sin esperar al final "
-                "de la conversacion. Llamala cada vez que el cliente diga algo nuevo, "
-                "aunque sea de pasada.\n\nCampos:\n" + descripcion_campos
+                "Guarda un dato del cliente apenas lo menciona. Si en un mensaje da "
+                "varios datos, guardalos todos en el mismo turno.\n\nCampos:\n"
+                + descripcion_campos
             ),
             "esquema": {
                 "type": "object",
@@ -431,31 +669,62 @@ def definiciones() -> list[dict[str, Any]]:
         {
             "nombre": "consultar_precio",
             "descripcion": (
-                "Te da el precio POR METRO CUADRADO del material que necesita el "
-                "cliente, con sus calidades. Usala SIEMPRE antes de mencionar "
-                "cualquier numero: no inventes precios ni los saques de memoria.\n\n"
-                "No calcula totales a proposito. Nunca multipliques por los metros "
-                "ni des un valor final: el calculo lo hace el asesor en la visita, "
-                "con las medidas exactas tomadas en el lugar."
+                "Si faltan datos, te dice cuales y en que orden. Si estan, manda la "
+                "lista oficial de precios del mes, tal cual, antes de tu mensaje. Nunca "
+                "escribas un precio vos: salen solo de aca. No calcula totales."
             ),
             "esquema": {
                 "type": "object",
                 "properties": {
                     "zona": {
                         "type": "string",
-                        "enum": ["quito_y_valles", "otra_ciudad", "fuera_del_pais"],
+                        # Cinco zonas desde el 29/9/2026, cada una con su minimo y
+                        # su tabla de precios. El modelo no tiene que elegirla: la
+                        # deduce el codigo de la ciudad (app/ubicaciones.py).
+                        "enum": ["quito_y_valles", "pichincha_cercana", "zona_azul",
+                                 "zona_verde", "zona_roja", "galapagos", "fuera_del_pais"],
                         "description": "Solo si querés consultar por una zona distinta a la guardada",
+                    },
+                    "introduccion": {
+                        "type": "string",
+                        "description": (
+                            "La linea que sale ANTES de la lista: asiente lo ultimo que "
+                            "dijo la persona y presenta la lista. Sin numeros."
+                        ),
                     },
                 },
                 "required": [],
             },
         },
         {
+            "nombre": "enviar_ficha",
+            "descripcion": (
+                "Manda la descripcion oficial de un producto, escrita por MasterShield, "
+                "y el video de los trabajos. Usala cuando pregunten que es o como "
+                "funciona un producto. Primero sale tu `introduccion`, despues la "
+                "descripcion y despues tu mensaje, corto, con el paso siguiente. No "
+                "la uses para una duda puntual. Maximo dos por mensaje."
+            ),
+            "esquema": {
+                "type": "object",
+                "properties": {
+                    "producto": {"type": "string", "enum": fichas.disponibles()},
+                    "introduccion": {
+                        "type": "string",
+                        "description": (
+                            "La linea que sale ANTES de la descripcion: asiente lo que "
+                            "dijo la persona y presenta lo que viene. Sin precios."
+                        ),
+                    },
+                },
+                "required": ["producto", "introduccion"],
+            },
+        },
+        {
             "nombre": "finalizar_calificacion",
             "descripcion": (
-                "Cierra el relevamiento cuando ya tenes todo lo necesario para que un "
-                "asesor llame. Si falta algo, te lo dice y seguis preguntando. "
-                "No la llames antes de tener el telefono."
+                "Cierra el relevamiento cuando la persona confirmo el numero para la "
+                "llamada. Si falta algo, te lo dice y seguis preguntando."
             ),
             "esquema": {"type": "object", "properties": {}, "required": []},
         },
@@ -479,10 +748,8 @@ def definiciones() -> list[dict[str, Any]]:
             "nombre": "cerrar_sin_responder",
             "descripcion": (
                 "Termina el turno sin mandar ningun mensaje. Usala cuando lo ultimo "
-                "que dijo el cliente no pide respuesta —un 'gracias', un 'perfecto', "
-                "un 'dale'— y contestar seria hablar por hablar. Tambien cuando un "
-                "asesor ya se hizo cargo del tema y agregar algo seria pisarlo. "
-                "En la duda, contesta: el silencio solo es correcto cuando es obvio."
+                "que dijo el cliente no pide respuesta y contestar seria hablar por "
+                "hablar, o cuando ya se mando la despedida final. En la duda, contesta."
             ),
             "esquema": {
                 "type": "object",
@@ -502,8 +769,7 @@ async def ejecutar(nombre: str, conversacion_id: int, argumentos: dict[str, Any]
     """Despacha una llamada del modelo. Nunca propaga excepciones.
 
     Si una herramienta falla, el modelo tiene que enterarse y poder seguir la
-    conversacion, no cortarla. Un turno que explota deja al cliente sin
-    respuesta, que es lo peor que puede pasar.
+    conversacion, no cortarla.
     """
     try:
         if nombre == "guardar_dato":
@@ -511,7 +777,14 @@ async def ejecutar(nombre: str, conversacion_id: int, argumentos: dict[str, Any]
                 conversacion_id, argumentos["campo"], argumentos["valor"]
             )
         if nombre == "consultar_precio":
-            return await consultar_precio(conversacion_id, zona=argumentos.get("zona"))
+            return await consultar_precio(
+                conversacion_id, zona=argumentos.get("zona"),
+                introduccion=argumentos.get("introduccion"),
+            )
+        if nombre == "enviar_ficha":
+            return await enviar_ficha(
+                conversacion_id, argumentos["producto"], argumentos.get("introduccion")
+            )
         if nombre == "finalizar_calificacion":
             return await finalizar_calificacion(conversacion_id)
         if nombre == "escalar_a_humano":

@@ -16,9 +16,11 @@ def armar(**extra) -> Settings:
 
 def test_valores_por_defecto():
     s = armar()
-    assert s.demora_respuesta_min_seg == 18
-    assert s.demora_respuesta_max_seg == 22
-    assert s.horario_atencion == "09:00-18:00"
+    # 4 a 6 desde el 15/9/2026, con el prompt corto y el modelo en "low": junta
+    # los mensajes seguidos y la respuesta queda cerca de los 20 segundos.
+    assert s.demora_respuesta_min_seg == 4
+    assert s.demora_respuesta_max_seg == 6
+    assert s.horario_atencion == "08:00-17:00"
     assert s.tz == "America/Guayaquil"
     assert s.pais == "EC"
     assert s.prefijo_telefonico == "+593"
@@ -28,6 +30,7 @@ def test_valores_por_defecto():
 def test_lee_del_entorno(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", URL)
     monkeypatch.setenv("DEMORA_RESPUESTA_MIN_SEG", "10")
+    monkeypatch.setenv("DEMORA_RESPUESTA_MAX_SEG", "15")
     monkeypatch.setenv("LOG_LEVEL", "debug")
     s = Settings(_env_file=None)
     assert s.demora_respuesta_min_seg == 10
@@ -65,10 +68,15 @@ def test_database_url_sin_host():
         Settings(_env_file=None, database_url="postgresql:///base")
 
 
-@pytest.mark.parametrize("valor", [0, -1, 601])
+@pytest.mark.parametrize("valor", [-1, 601])
 def test_demora_fuera_de_rango(valor):
     with pytest.raises(ValidationError):
         armar(demora_respuesta_min_seg=valor)
+
+
+def test_la_demora_puede_ser_cero():
+    s = armar(demora_respuesta_min_seg=0, demora_respuesta_max_seg=0)
+    assert s.demora_respuesta_min_seg == s.demora_respuesta_max_seg == 0
 
 
 def test_la_demora_minima_no_puede_superar_a_la_maxima():
@@ -150,12 +158,12 @@ def test_sin_credenciales_faltan_todas():
 @pytest.mark.parametrize(
     "momento,esperado",
     [
-        # Miercoles 13/08/2025
-        (datetime(2025, 8, 13, 9, 0), True),
+        # Miercoles 13/08/2025. La oficina abre 08:00 y cierra 17:00.
+        (datetime(2025, 8, 13, 8, 0), True),
         (datetime(2025, 8, 13, 13, 30), True),
-        (datetime(2025, 8, 13, 17, 59), True),
-        (datetime(2025, 8, 13, 18, 0), False),  # el limite superior queda afuera
-        (datetime(2025, 8, 13, 8, 59), False),
+        (datetime(2025, 8, 13, 16, 59), True),
+        (datetime(2025, 8, 13, 17, 0), False),  # el limite superior queda afuera
+        (datetime(2025, 8, 13, 7, 59), False),
         (datetime(2025, 8, 13, 3, 0), False),
         # Sabado y domingo
         (datetime(2025, 8, 16, 11, 0), False),
@@ -171,15 +179,15 @@ def test_esta_en_horario_convierte_zona():
     """Un momento en UTC se evalua contra la hora de Quito (UTC-5).
 
     El primer caso es el que atrapa una vuelta accidental a la zona argentina:
-    a las 13:00 UTC en Ecuador son las 08:00 y todavia no abrieron, pero en
-    Buenos Aires serian las 10:00 y daria dentro de horario.
+    a las 12:00 UTC en Ecuador son las 07:00 y todavia no abrieron, pero en
+    Buenos Aires serian las 09:00 y daria dentro de horario.
     """
     s = armar()
-    assert s.esta_en_horario(datetime(2025, 8, 13, 13, 0, tzinfo=ZoneInfo("UTC"))) is False
+    assert s.esta_en_horario(datetime(2025, 8, 13, 12, 0, tzinfo=ZoneInfo("UTC"))) is False
     # 15:00 UTC son las 10:00 en Quito: dentro.
     assert s.esta_en_horario(datetime(2025, 8, 13, 15, 0, tzinfo=ZoneInfo("UTC"))) is True
-    # 23:00 UTC son las 18:00 en Quito: el limite superior queda afuera.
-    assert s.esta_en_horario(datetime(2025, 8, 13, 23, 0, tzinfo=ZoneInfo("UTC"))) is False
+    # 22:00 UTC son las 17:00 en Quito: el limite superior queda afuera.
+    assert s.esta_en_horario(datetime(2025, 8, 13, 22, 0, tzinfo=ZoneInfo("UTC"))) is False
 
 
 def test_obtener_settings_cachea(monkeypatch):
@@ -187,3 +195,53 @@ def test_obtener_settings_cachea(monkeypatch):
     obtener_settings.cache_clear()
     assert obtener_settings() is obtener_settings()
     obtener_settings.cache_clear()
+
+
+# --- cuando lo llama el asesor ----------------------------------------------
+# MasterShield atiende el telefono de lunes a viernes, 08:00 a 17:00 de Ecuador.
+# El agente contesta a cualquier hora, pero no puede prometer una llamada que la
+# oficina no va a hacer hasta el lunes (15/9/2026).
+
+# Fuera de horario se dice ademas por que: "mañana" a secas deja a la persona
+# preguntandose por que no la llaman hoy (pedido de MasterShield, 23/9/2026).
+PORQUE = ", porque atendemos de lunes a viernes de 08:00 a 17:00"
+
+
+@pytest.mark.parametrize("momento, esperado", [
+    # Miercoles 26/08/2026
+    (datetime(2026, 8, 26, 11, 0), "a la brevedad"),
+    (datetime(2026, 8, 26, 8, 0), "a la brevedad"),
+    (datetime(2026, 8, 26, 6, 30), "hoy, en cuanto abra la oficina" + PORQUE),
+    (datetime(2026, 8, 26, 17, 0), "mañana" + PORQUE),
+    (datetime(2026, 8, 26, 22, 30), "mañana" + PORQUE),
+    # Viernes 28/08/2026: con la oficina abierta, a la brevedad; cerrada, el lunes
+    (datetime(2026, 8, 28, 11, 0), "a la brevedad"),
+    (datetime(2026, 8, 28, 17, 30), "el lunes" + PORQUE),
+    # Fin de semana
+    (datetime(2026, 8, 29, 11, 0), "el lunes" + PORQUE),
+    (datetime(2026, 8, 30, 20, 0), "el lunes" + PORQUE),
+])
+def test_cuando_llaman(momento, esperado):
+    s = armar()
+    assert s.cuando_llaman(momento.replace(tzinfo=s.zona)) == esperado
+
+
+def test_dentro_de_horario_no_se_explica_el_horario():
+    """Con la oficina abierta, el motivo sobra: llaman ahora."""
+    s = armar()
+    assert s.cuando_llaman(datetime(2026, 8, 26, 11, 0, tzinfo=s.zona)) == "a la brevedad"
+
+
+def test_el_horario_que_se_dice_sale_de_la_configuracion():
+    """Si MasterShield cambia el horario, cambia el texto: no esta escrito a mano."""
+    s = armar(horario_atencion="09:30-18:15")
+    assert s.horario_legible == "09:30 a 18:15"
+    assert "de 09:30 a 18:15" in s.cuando_llaman(
+        datetime(2026, 8, 26, 22, 0, tzinfo=s.zona))
+
+
+def test_cuando_llaman_usa_la_hora_de_ecuador():
+    """22:00 UTC son las 17:00 en Quito: la oficina ya cerro."""
+    s = armar()
+    assert s.cuando_llaman(
+        datetime(2026, 8, 26, 22, 0, tzinfo=ZoneInfo("UTC"))) == "mañana" + PORQUE

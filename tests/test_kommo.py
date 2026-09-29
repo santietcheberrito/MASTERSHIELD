@@ -42,7 +42,7 @@ def documento(etapa=ALTA, clasificacion="alta", presupuesto=1470.0):
             "nombre": "Andrea Salazar", "etapa": etapa, "score": 81,
             "clasificacion": clasificacion, "canal": "Telegram",
             "telefono": "+593987445566", "zona": "Quito y valles",
-            "linea": "Arquitectónico", "producto": "Control Solar Arquitectónico",
+            "linea": "Arquitectónico", "producto": "Control Solar Ventanas",
             "metros_cuadrados": 35, "presupuesto": presupuesto,
             "garantia": "10 años", "aplicacion": "Oficina", "urgencia": "Inmediato",
             "tipo_cliente": "Empresa", "disponibilidad": "martes por la tarde",

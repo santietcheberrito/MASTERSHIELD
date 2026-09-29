@@ -6,25 +6,97 @@ es exactamente lo que tienen que hacer, porque el error se descubriría si no
 cuando un cliente real reciba un presupuesto que no cierra.
 """
 
+import copy
 from datetime import date
 import pytest
 
 from app import precios
 from app.precios import Cotizacion, cotizar, garantias_disponibles
 
-CONTROL_SOLAR = "control_solar_arquitectonico"
+CONTROL_SOLAR = "control_solar_ventanas"
 PRIVACIDAD = "privacidad_arquitectonica"
 SEGURIDAD = "seguridad_arquitectonica"
 VEHICULAR = "seguridad_vehicular"
 
-QUITO = "quito_y_valles"
-OTRA = "otra_ciudad"
+# Las cinco zonas de venta del documento "UBICACIONES Y PRECIOS MS 2027", que
+# el 29/9/2026 reemplazaron a "Quito o no Quito" con recargo plano.
+QUITO = "quito_y_valles"        # minimo 5 m2
+CERCANA = "pichincha_cercana"   # minimo 10 m2
+AZUL = "zona_azul"              # minimo 15 m2
+VERDE = "zona_verde"            # minimo 20 m2
+ROJA = "zona_roja"              # minimo 25 m2
+GALAPAGOS = "galapagos"
 AFUERA = "fuera_del_pais"
 
 # Los precios de lista se prueban con una fecha fuera de la promoción del mes.
 # Sin fijarla, estos tests dependerían del calendario y se caerían solos cuando
 # venciera el especial, que es ruido y no una falla.
 SIN_PROMO = date(2027, 1, 15)
+
+
+# --- qué producto corresponde -----------------------------------------------
+
+@pytest.mark.parametrize(
+    "datos,producto",
+    [
+        ({"linea": "vehicular"}, VEHICULAR),
+        ({"linea": "arquitectonico", "objetivo": "privacidad"}, PRIVACIDAD),
+        ({"linea": "arquitectonico", "objetivo": "seguridad"}, SEGURIDAD),
+        ({"linea": "arquitectonico", "objetivo": "control_solar", "superficie": "ventanas"},
+         CONTROL_SOLAR),
+        ({"linea": "arquitectonico", "objetivo": "control_solar", "superficie": "techo"},
+         "control_solar_techos"),
+        # Control solar son dos productos: sin la superficie no hay uno solo.
+        ({"linea": "arquitectonico", "objetivo": "control_solar"}, None),
+        ({"linea": "arquitectonico"}, None),
+        ({}, None),
+    ],
+)
+def test_producto_para(datos, producto):
+    assert precios.producto_para(datos) == producto
+
+
+def test_techos_cuesta_lo_mismo_que_ventanas():
+    """Decisión del cliente. En el YAML es un alias, así que es el mismo dato y
+    no una copia que se pueda desactualizar."""
+    techos = precios.informar_precios("control_solar_techos", QUITO, hoy=SIN_PROMO)
+    ventanas = precios.informar_precios(CONTROL_SOLAR, QUITO, hoy=SIN_PROMO)
+    assert techos.puede_informar is True
+    assert techos.calidades == ventanas.calidades
+
+
+@pytest.mark.parametrize(
+    "datos,producto",
+    [
+        # Cuestan lo mismo: para el precio no hace falta saber la superficie.
+        ({"linea": "arquitectonico", "objetivo": "control_solar"}, CONTROL_SOLAR),
+        ({"linea": "arquitectonico", "objetivo": "control_solar", "superficie": "techo"},
+         "control_solar_techos"),
+        ({"linea": "arquitectonico", "objetivo": "privacidad"}, PRIVACIDAD),
+        # Sin objetivo quedan productos con precios distintos.
+        ({"linea": "arquitectonico"}, None),
+        ({}, None),
+    ],
+)
+def test_producto_para_cotizar(datos, producto):
+    assert precios.producto_para_cotizar(datos) == producto
+
+
+def test_si_ventanas_y_techos_dejan_de_costar_lo_mismo_se_vuelve_a_pedir_la_superficie(
+    monkeypatch,
+):
+    cfg = copy.deepcopy(precios.configuracion())
+    # Techos pasa a comer de su propia tabla, con otros valores.
+    techos = next(p for p in cfg["productos"] if p["id"] == "control_solar_techos")
+    techos["tabla_de_precios"] = "control_solar_techos"
+    for zona in cfg["zonas"].values():
+        if zona.get("precios"):
+            zona["precios"]["control_solar_techos"] = [
+                {"garantia_anios": 10, "precio_normal": 50, "precio_especial": 45}]
+    monkeypatch.setattr(precios, "configuracion", lambda ruta=None: cfg)
+
+    assert precios.producto_para_cotizar(
+        {"linea": "arquitectonico", "objetivo": "control_solar"}) is None
 
 
 # --- precios de lista -------------------------------------------------------
@@ -46,19 +118,24 @@ def test_precio_de_lista_en_quito(producto, garantia, precio):
 
 
 def test_los_valles_cuentan_como_quito():
-    """Cumbayá, Tumbaco, Los Chillos: precio estándar y mínimo de 5 m². Es una
-    sola zona, no hay categoría intermedia."""
+    """Cumbayá, Tumbaco, Los Chillos: el mínimo más bajo, 5 m². El resto de
+    Pichincha es otra zona, con mínimo 10."""
     c = cotizar(CONTROL_SOLAR, 6, QUITO, 10)
-    assert c.puede_cotizar
-    assert c.recargo_m2 == 0
-    assert c.minimo_m2 is None
+    assert c.puede_cotizar, "6 m² pasa el mínimo de 5"
+    assert precios.informar_precios(CONTROL_SOLAR, QUITO).minimo_m2 == 5
+    # El resto de Pichincha es otra zona: el mismo pedido no alcanzaría.
+    assert not cotizar(CONTROL_SOLAR, 6, CERCANA, 10).puede_cotizar
 
 
-def test_otras_ciudades_pagan_diez_dolares_mas_por_metro():
+def test_cada_zona_tiene_su_propio_precio():
+    """Hasta el 29/9/2026 provincia era Quito más un recargo plano de 10. Ahora
+    cada zona trae su tabla y no hay formula: en verde la calidad de 10 años
+    cuesta 55, no 52."""
     quito = cotizar(CONTROL_SOLAR, 25, QUITO, 10, hoy=SIN_PROMO)
-    otra = cotizar(CONTROL_SOLAR, 25, OTRA, 10, hoy=SIN_PROMO)
-    assert otra.precio_m2 - quito.precio_m2 == 10
-    assert otra.subtotal == 52 * 25
+    verde = cotizar(CONTROL_SOLAR, 25, VERDE, 10, hoy=SIN_PROMO)
+    assert quito.precio_m2 == 42
+    assert verde.precio_m2 == 55
+    assert verde.subtotal == 55 * 25
 
 
 def test_el_total_no_lleva_iva_sumado():
@@ -93,10 +170,10 @@ def test_justo_en_el_minimo_se_puede():
     assert cotizar(CONTROL_SOLAR, 5, QUITO, 10).puede_cotizar
 
 
-def test_minimo_de_veinte_metros_fuera_de_quito():
+def test_el_minimo_sube_con_la_distancia():
     """Cuatro veces el de Quito: es el filtro de calificación más duro que
     tiene el negocio."""
-    c = cotizar(CONTROL_SOLAR, 12, OTRA, 10)
+    c = cotizar(CONTROL_SOLAR, 12, VERDE, 10)
     assert not c.puede_cotizar
     assert c.minimo_m2 == 20
     # Y los mismos 12 m² en Quito sí se pueden.
@@ -128,13 +205,13 @@ def test_seguridad_arquitectonica_da_un_desde():
     assert c.precio_m2 == 24
 
 
-def test_seguridad_fuera_de_quito_tambien_paga_el_adicional():
+def test_seguridad_tambien_cambia_por_zona():
     """El adicional de USD 10 por m² aplica a todos los productos cotizables."""
-    c = cotizar(SEGURIDAD, 30, OTRA, 10)
+    c = cotizar(SEGURIDAD, 30, VERDE, 10)
     assert c.puede_cotizar
     assert c.tipo == "desde"
-    assert c.precio_m2 == 34
-    assert c.subtotal == 34 * 30
+    assert c.precio_m2 == 35, "seguridad en verde: 35, no 24 + recargo"
+    assert c.subtotal == 35 * 30
 
 
 # --- vehicular: no se cotiza por chat ---------------------------------------
@@ -234,29 +311,29 @@ def test_sin_vigencia_declarada_no_hay_promocion():
 
 # --- el recargo de provincias va dentro del precio --------------------------
 
-def test_en_provincias_el_precio_por_metro_ya_trae_el_recargo():
+def test_el_precio_por_metro_sale_de_la_zona():
     """Devolverlo aparte obligaba a sumarlo a quien leyera la respuesta, y el
     agente tiene prohibido hacer cuentas: le dijo 37 a un cliente de Guayaquil
     cuando son 47, y el control de precios lo dejó pasar porque 37 sí venía de
     la herramienta."""
     quito = precios.informar_precios(CONTROL_SOLAR, QUITO, hoy=SIN_PROMO)
-    otra = precios.informar_precios(CONTROL_SOLAR, OTRA, hoy=SIN_PROMO)
+    otra = precios.informar_precios(CONTROL_SOLAR, VERDE, hoy=SIN_PROMO)
 
     de_quito = {c.garantia_anios: c.precio_normal for c in quito.calidades}
     de_otra = {c.garantia_anios: c.precio_normal for c in otra.calidades}
 
     assert de_quito == {10: 42, 5: 32}
-    assert de_otra == {10: 52, 5: 42}, "los 10 dólares de recargo ya están adentro"
+    assert de_otra == {10: 55, 5: 45}, "los precios de verde, sin formula que los derive"
 
 
-def test_el_recargo_tambien_entra_en_el_precio_de_promocion():
-    otra = precios.informar_precios(CONTROL_SOLAR, OTRA, hoy=date(2026, 9, 15))
+def test_la_promocion_tambien_es_por_zona():
+    otra = precios.informar_precios(CONTROL_SOLAR, VERDE, hoy=date(2026, 9, 15))
     especiales = {c.garantia_anios: c.precio_especial for c in otra.calidades}
-    assert especiales == {10: 47, 5: 35}
+    assert especiales == {10: 49, 5: 39}
 
 
-def test_el_minimo_de_provincias_viaja_con_el_precio():
+def test_el_minimo_de_la_zona_viaja_con_el_precio():
     """Es cuatro veces el de Quito y decide si la persona es cliente."""
-    otra = precios.informar_precios(CONTROL_SOLAR, OTRA)
+    otra = precios.informar_precios(CONTROL_SOLAR, VERDE)
     assert otra.minimo_m2 == 20
     assert precios.informar_precios(CONTROL_SOLAR, QUITO).minimo_m2 == 5

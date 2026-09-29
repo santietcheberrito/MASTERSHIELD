@@ -15,6 +15,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
+import mimetypes
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -32,6 +35,15 @@ TIPOS = {
     "sticker": "otro", "contacts": "otro", "button": "texto",
     "interactive": "texto",
 }
+
+
+# Eventos que Meta manda con forma de mensaje y no lo son: nadie escribio nada.
+# Una reaccion —el 👍 sobre un mensaje nuestro— llegaba como tipo "otro" con
+# contenido vacio, armaba un turno igual, y el agente le contesto a Pablo
+# "recibimos el archivo" un minuto despues de haberse despedido (23/9/2026).
+# Un sticker suelto es lo mismo: una expresion, no una consulta. Si vienen en
+# una rafaga junto con texto, el turno se arma igual por los otros mensajes.
+SIN_RESPUESTA = frozenset({"reaction", "sticker", "system"})
 
 
 def firma_valida(app_secret: str, cuerpo: bytes, cabecera: str | None) -> bool:
@@ -95,6 +107,9 @@ def parsear(payload: dict[str, Any]) -> MensajeEntrante | None:
         return None  # estados de entrega, no mensajes
 
     mensaje = mensajes[0]
+    if mensaje.get("type") in SIN_RESPUESTA:
+        return None  # una reaccion o un sticker no piden respuesta
+
     telefono = mensaje.get("from")
     id_mensaje = mensaje.get("id")
     if not telefono or not id_mensaje:
@@ -152,6 +167,9 @@ def parsear_eco(payload: dict[str, Any]) -> MensajeEntrante | None:
         return None
 
     eco = ecos[0]
+    if eco.get("type") in SIN_RESPUESTA:
+        return None  # un emoji del asesor no es intervenir en la conversacion
+
     destinatario = eco.get("to")
     id_mensaje = eco.get("id")
     if not destinatario or not id_mensaje:
@@ -202,13 +220,16 @@ async def _llamar(token: str, phone_number_id: str, cuerpo: dict) -> dict:
     return respuesta.json()
 
 
-# Lo que Meta manda como adjunto y a nosotros nos sirve. El audio y el video
-# quedan afuera a proposito: nadie los va a mirar para tomar medidas, y subirlos
-# al lead solo llena el drive del cliente.
+# Lo que se sube al lead de Kommo. El audio y el video quedan afuera a
+# proposito: nadie los va a mirar para tomar medidas, y subirlos al lead solo
+# llena el drive del cliente. La nota de voz igual se baja —se transcribe y el
+# asesor la lee en la conversacion (app/audio.py)—, pero no se sube.
 TIPOS_CON_ARCHIVO = ("image", "document")
 
 
-def medias_del_payload(payload: dict[str, Any]) -> list[dict[str, str]]:
+def medias_del_payload(
+    payload: dict[str, Any], tipos: tuple[str, ...] = TIPOS_CON_ARCHIVO
+) -> list[dict[str, str]]:
     """Los archivos que trae un mensaje entrante, si trae alguno.
 
     Devuelve el id con el que se descargan de Meta y lo que se sepa del
@@ -223,7 +244,7 @@ def medias_del_payload(payload: dict[str, Any]) -> list[dict[str, str]]:
     encontrados = []
     for mensaje in mensajes or []:
         tipo = mensaje.get("type")
-        if tipo not in TIPOS_CON_ARCHIVO:
+        if tipo not in tipos:
             continue
         objeto = mensaje.get(tipo) or {}
         media_id = objeto.get("id")
@@ -291,6 +312,82 @@ async def enviar(token: str, phone_number_id: str, destino: str, texto: str) -> 
         "type": "text",
         "text": {"preview_url": False, "body": texto},
     })
+    enviados = cuerpo.get("messages") or []
+    return f"{CANAL}:{enviados[0]['id']}" if enviados else None
+
+
+# Un archivo subido a Meta se puede reusar durante 30 dias. Se vuelve a subir
+# antes, para no descubrir que vencio en medio de una conversacion.
+DIAS_DE_VIDA_DE_UN_ARCHIVO_SUBIDO = 25
+
+# Lo ya subido en este proceso: (ruta, mtime, tamaño) -> (media_id, cuando).
+# Con el mtime en la clave, reemplazar el archivo lo sube de nuevo solo. En
+# memoria alcanza: un reinicio cuesta una subida de unos megas, no un problema.
+_subidos: dict[tuple[str, int, int], tuple[str, datetime]] = {}
+
+
+async def subir_media(token: str, phone_number_id: str, contenido: bytes,
+                      mime: str, nombre: str) -> str:
+    """Sube un archivo a Meta y devuelve el id con el que se manda."""
+    async with httpx.AsyncClient(timeout=120) as cliente:
+        r = await cliente.post(
+            f"{API}/{phone_number_id}/media",
+            headers={"Authorization": f"Bearer {token}"},
+            data={"messaging_product": "whatsapp", "type": mime},
+            files={"file": (nombre, contenido, mime)},
+        )
+    if r.status_code >= 400:
+        raise WhatsAppError(f"no se pudo subir {nombre}: {r.status_code} {r.text[:300]}")
+    return r.json()["id"]
+
+
+async def _id_del_archivo(token: str, phone_number_id: str, ruta: Path,
+                          forzar: bool = False) -> str:
+    estado = ruta.stat()
+    clave = (str(ruta), estado.st_mtime_ns, estado.st_size)
+    ahora = datetime.now(timezone.utc)
+    guardado = _subidos.get(clave)
+    if (guardado and not forzar
+            and ahora - guardado[1] < timedelta(days=DIAS_DE_VIDA_DE_UN_ARCHIVO_SUBIDO)):
+        return guardado[0]
+
+    mime = mimetypes.guess_type(ruta.name)[0] or "video/mp4"
+    media_id = await subir_media(token, phone_number_id, ruta.read_bytes(), mime, ruta.name)
+    _subidos[clave] = (media_id, ahora)
+    logger.info("archivo subido a Meta | %s -> %s", ruta.name, media_id)
+    return media_id
+
+
+async def enviar_video(token: str, phone_number_id: str, destino: str,
+                       ruta: Path, leyenda: str = "") -> str | None:
+    """Manda un video del disco. Lo sube la primera vez y despues reusa el id.
+
+    La leyenda va dentro del mismo mensaje, debajo del video: mandada aparte
+    podria llegar antes o despues y quedar suelta.
+
+    Si Meta rechaza el envio se sube de nuevo y se reintenta una vez: el id
+    guardado pudo haber vencido o haberse borrado del lado de Meta, y eso no se
+    ve hasta que se usa.
+    """
+    def _cuerpo(media_id: str) -> dict:
+        video = {"id": media_id}
+        if leyenda:
+            video["caption"] = leyenda
+        return {
+            "recipient_type": "individual",
+            "to": destino_de_envio(destino),
+            "type": "video",
+            "video": video,
+        }
+
+    media_id = await _id_del_archivo(token, phone_number_id, ruta)
+    try:
+        cuerpo = await _llamar(token, phone_number_id, _cuerpo(media_id))
+    except WhatsAppError:
+        logger.warning("Meta rechazo el video con el id guardado; se sube de nuevo")
+        media_id = await _id_del_archivo(token, phone_number_id, ruta, forzar=True)
+        cuerpo = await _llamar(token, phone_number_id, _cuerpo(media_id))
+
     enviados = cuerpo.get("messages") or []
     return f"{CANAL}:{enviados[0]['id']}" if enviados else None
 

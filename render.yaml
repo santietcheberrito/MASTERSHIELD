@@ -1,0 +1,80 @@
+# Deploy en Render. Un solo Web Service, no un Web Service + un Background
+# Worker: el webhook y los tres loops —turnos, reintentos del CRM y despertador
+# de pausas— viven en el mismo proceso, como tareas de asyncio. Es una decisión
+# del CLAUDE.md y no un atajo: este sistema atiende decenas de conversaciones
+# por día, y separar el worker solo agregaría una pieza más que puede fallar.
+#
+# El plan no puede ser `free`. Los servicios gratuitos de Render se suspenden a
+# los 15 minutos sin tráfico, y acá eso significa que un lead pendiente en el
+# CRM no se reintenta nunca, que una pausa de seis horas no vence, y que el
+# primer webhook después de despertar tarda un minuto mientras Meta reintenta.
+services:
+  - type: web
+    name: agente-mastershield
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+
+    # Cerca de la base, no cerca del cliente. La persona no le pega a este
+    # servidor: le escribe a Meta y Meta nos llama. Lo que corre contra reloj
+    # es el webhook, que hace varias consultas con 500 ms de presupuesto, y la
+    # base esta en Supabase us-west-2.
+    region: oregon
+
+    healthCheckPath: /health
+
+    # Las migraciones corren antes de que la version nueva tome trafico, no
+    # dentro del arranque: si fallan, el deploy se cancela y sigue andando la
+    # anterior. `migrar.py` es idempotente —lleva su propia tabla de aplicadas—
+    # asi que repetirlo no hace nada.
+    preDeployCommand: python scripts/migrar.py
+
+    autoDeploy: true
+
+    envVars:
+      # `LOG_FORMATO=json` porque en produccion los logs se consultan, no se
+      # leen: una linea por evento con `conversacion_id` es lo que permite
+      # reconstruir un turno entero.
+      - key: LOG_FORMATO
+        value: json
+      - key: LOG_LEVEL
+        value: INFO
+      - key: TZ
+        value: America/Guayaquil
+      - key: PAIS
+        value: EC
+      - key: PREFIJO_TELEFONICO
+        value: "+593"
+      - key: PROVEEDOR_MODELO
+        value: openai
+      - key: MODELO_AGENTE
+        value: gpt-5
+      - key: TELEGRAM_MODO
+        value: webhook
+      - key: CRM_DESTINO
+        value: kommo
+      - key: DEMORA_RESPUESTA_MIN_SEG
+        value: "4"
+      - key: DEMORA_RESPUESTA_MAX_SEG
+        value: "6"
+      - key: HORARIO_ATENCION
+        value: 08:00-17:00
+
+      # Todo lo que sigue se carga a mano en el panel y nunca en este archivo,
+      # que va al repositorio.
+      - key: DATABASE_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: KOMMO_SUBDOMAIN
+        sync: false
+      - key: KOMMO_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_TOKEN
+        sync: false
+      - key: WHATSAPP_APP_SECRET
+        sync: false
+      - key: WHATSAPP_VERIFY_TOKEN
+        sync: false

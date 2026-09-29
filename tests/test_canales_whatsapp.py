@@ -289,3 +289,40 @@ def test_el_epigrafe_sigue_siendo_el_texto_del_mensaje():
 
     assert mensaje.tipo == "imagen"
     assert mensaje.texto == "estas son las ventanas"
+
+
+# --- lo que no es un mensaje --------------------------------------------------
+
+def test_una_reaccion_no_genera_turno():
+    """Pablo, 23/9/2026: puso un 👍 sobre un mensaje despues de la despedida.
+    Llegaba como tipo "otro" con contenido vacio y el agente contesto
+    "recibimos el archivo", fuera de contexto y con la conversacion cerrada."""
+    p = payload(type="reaction", reaction={"emoji": "👍", "message_id": "wamid.ABC"})
+    del p["entry"][0]["changes"][0]["value"]["messages"][0]["text"]
+
+    assert whatsapp.parsear(p) is None
+
+
+def test_un_sticker_solo_tampoco():
+    """Una expresion, no una consulta."""
+    p = payload(type="sticker", sticker={"id": "stk-1", "mime_type": "image/webp"})
+    del p["entry"][0]["changes"][0]["value"]["messages"][0]["text"]
+
+    assert whatsapp.parsear(p) is None
+
+
+def test_un_mensaje_normal_sigue_pasando():
+    """La red no puede tragarse lo que si hay que contestar."""
+    mensaje = whatsapp.parsear(payload())
+
+    assert mensaje is not None
+    assert mensaje.texto == "buenas, necesito lamina"
+
+
+def test_una_foto_sigue_pasando():
+    p = payload(type="image", image={"id": "img-1", "mime_type": "image/jpeg"})
+    del p["entry"][0]["changes"][0]["value"]["messages"][0]["text"]
+
+    mensaje = whatsapp.parsear(p)
+
+    assert mensaje is not None and mensaje.tipo == "imagen"

@@ -2,7 +2,18 @@
 
 import pytest
 
-from app.agente import loop
+from app import contexto, textos
+
+from app.agente import herramientas, loop
+
+
+@pytest.fixture(autouse=True)
+def _sin_busqueda_en_la_base(monkeypatch):
+    """El contexto del turno busca respuestas con embeddings de OpenAI. Aca se
+    prueba el ciclo, no la busqueda."""
+    async def _armar(*args, **kwargs):
+        return ""
+    monkeypatch.setattr(contexto, "armar", _armar)
 
 
 # --- prompt del sistema -----------------------------------------------------
@@ -18,12 +29,12 @@ def test_lo_estatico_va_primero_y_lo_que_cambia_despues(settings_de_prueba):
     assert len(partes[0]) > len(partes[1])
 
 
-def test_el_conocimiento_va_en_el_prefijo(settings_de_prueba):
-    """Sin esto el agente contesta desde lo que "sabe" de películas para vidrio,
-    que para estos productos es falso."""
-    estatico = loop.armar_sistema(None)[0]
-    assert "anti motín" in estatico
-    assert "no reduce el ruido" in estatico.lower() or "ruido" in estatico
+def test_el_contexto_del_turno_va_en_lo_que_cambia(settings_de_prueba):
+    """Las respuestas y la informacion salen de la base segun el caso: van
+    despues del prefijo fijo para no romper el cache."""
+    partes = loop.armar_sistema(None, contexto_del_turno="## pedir_pedido")
+    assert "## pedir_pedido" in partes[1]
+    assert "## pedir_pedido" not in partes[0]
 
 
 def test_inyecta_lo_que_ya_sabe(settings_de_prueba):
@@ -211,9 +222,13 @@ async def _conversacion_con_precio(conexion, texto_del_agente):
     id_conv = await _conversacion(conexion)
     await conexion.execute(
         "UPDATE conversaciones SET datos = $2::jsonb WHERE id = $1", id_conv,
-        {"linea": "arquitectonico", "objetivo": "control_solar",
-         "zona": "quito_y_valles", "metros_cuadrados": 25},
+        {"nombre": "Ana", "linea": "arquitectonico", "objetivo": "control_solar",
+         "superficie": "ventanas", "zona": "quito_y_valles", "metros_cuadrados": 25},
     )
+    # La lista ya le llego: con la lista en el mismo turno, lo que el modelo
+    # escriba con precios se saca entero y no se llega a verificar.
+    precios = await herramientas.consultar_precio(id_conv)
+    await _mensaje(conexion, id_conv, "agente", textos.lista_de_precios(precios))
     await _mensaje(conexion, id_conv, "cliente", "cuanto sale?")
     return id_conv, _ProveedorFalso([
         Salida(llamadas=[Llamada("t1", "consultar_precio", {})]),
@@ -261,8 +276,8 @@ def test_el_telefono_del_canal_va_marcado_como_sin_confirmar(settings_de_prueba)
         {"telefono": "+593999123456"}, identificador="+593999123456"
     )[1]
 
-    assert "no uno que la persona haya dado" in dinamico
-    assert "prefiere dejar" in dinamico
+    assert "desde el que le escriben" in dinamico
+    assert "se confirma antes de cerrar" in dinamico
 
 
 def test_un_telefono_distinto_al_del_canal_no_se_repregunta(settings_de_prueba):
@@ -272,7 +287,7 @@ def test_un_telefono_distinto_al_del_canal_no_se_repregunta(settings_de_prueba):
         {"telefono": "+59321234567"}, identificador="+593999123456"
     )[1]
 
-    assert "no uno que la persona haya dado" not in dinamico
+    assert "desde el que le escriben" not in dinamico
 
 
 # --- después de que intervino un asesor -------------------------------------

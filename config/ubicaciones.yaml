@@ -1,0 +1,111 @@
+# Donde queda cada ciudad, para saber que zona de precios le corresponde.
+#
+# Sale del documento "UBICACIONES Y PRECIOS MS 2027" del cliente (29/9/2026).
+# Antes no hacia falta: con dos zonas, "Quito o no Quito" lo resolvia el modelo.
+# Con cinco zonas y minimos de 5 a 25 m2, la ubicacion decide el precio, y eso
+# no lo puede adivinar: se busca aca.
+#
+# Se indexa por provincia Y por ciudad, porque la gente dice las dos cosas
+# ("estoy en Azuay", "es en Gualaceo"). La comparacion ignora tildes y
+# mayusculas (app/ubicaciones.py).
+#
+# Al agregar una ciudad, alcanza con ponerla en la lista de su provincia.
+
+zonas:
+  quito_y_valles:
+    provincias:
+      # Solo Quito y los valles que el cliente marco en amarillo. El resto de
+      # Pichincha es `pichincha_cercana`, con minimo 10 y precios mas altos.
+      Pichincha:
+        - Quito
+        - Cumbayá
+        - Tumbaco
+        - Puembo
+        - Pifo
+        - Tababela
+        - Checa
+        - Conocoto
+        - La Armenia
+        - La Merced
+        - Sangolquí
+        - Amaguaña
+
+  pichincha_cercana:
+    provincias:
+      Pichincha:
+        # Zona norte
+        - Guayllabamba
+        - Malchinguí
+        - Perucho
+        - Tabacundo
+        - Cayambe
+        # Zona noroccidente
+        - Nanegalito
+        - Mindo
+        - San Miguel de los Bancos
+        - Pedro Vicente Maldonado
+        - Puerto Quito
+        # Zona sur
+        - Tambillo
+        - Machachi
+        - Aloag
+
+  zona_azul:
+    provincias:
+      Imbabura: [Ibarra, Otavalo, Atuntaqui, Cotacachi, Pimampiro, Urcuquí, San Pablo del Lago]
+      Bolívar: [Guaranda, San José de Chimbo, San Miguel, Caluma, Echeandía, Chillanes, Las Naves]
+      Cotopaxi: [Latacunga, La Maná, Salcedo, Pujilí, Saquisilí, Sigchos, Zumbahua]
+      Napo: [Tena, Archidona, El Chaco, Baeza, Carlos Julio Arosemena Tola, Quijos]
+      Tungurahua: [Ambato, Baños de Agua Santa, Pelileo, Píllaro, Quero, Tisaleo, Cevallos, Mocha]
+      Santo Domingo de los Tsáchilas:
+        [Santo Domingo, La Concordia, Valle Hermoso, Luz de América, Alluriquín]
+
+  zona_verde:
+    provincias:
+      Chimborazo: [Riobamba, Guano, Alausí, Chambo, Colta, Guamote, Cumandá, Pallatanga, Chunchi]
+      Cañar: [Azogues, La Troncal, Cañar, Biblián, El Tambo, Déleg, Suscal]
+      Azuay:
+        [Cuenca, Gualaceo, Paute, Santa Isabel, Sígsig, Girón, Camilo Ponce Enríquez,
+         Chordeleg, Nabón]
+      Guayas:
+        [Guayaquil, Durán, Milagro, Daule, Samborondón, Playas, El Triunfo, Balzar,
+         Naranjal, Yaguachi, Pedro Carbo, Salitre, General Villamil, Colimes]
+      Los Ríos:
+        [Babahoyo, Quevedo, Buena Fe, Ventanas, Valencia, Vinces, Puebloviejo, Mocache,
+         Baba, Montalvo, Palenque, Urdaneta]
+      Manabí:
+        [Portoviejo, Manta, Chone, Jipijapa, Montecristi, El Carmen, Bahía de Caráquez,
+         Pedernales, Rocafuerte, Sucre, Tosagua, Paján, Puerto López, Calceta, Jama]
+      Esmeraldas: [Esmeraldas, Quinindé, Atacames, San Lorenzo, Muisne, Tonsupa, Same, Borbón]
+
+  zona_roja:
+    provincias:
+      Carchi: [Tulcán, San Gabriel, El Ángel, Huaca, Mira]
+      Sucumbíos:
+        [Nueva Loja, Lago Agrio, Shushufindi, Cuyabeno, Gonzalo Pizarro, Cascales,
+         Lumbaquí, Putumayo]
+      Orellana: [El Coca, La Joya de los Sachas, Loreto, Nuevo Rocafuerte, Dayuma]
+      Pastaza: [Puyo, Shell, Mera, Santa Clara, Arajuno]
+      Morona Santiago:
+        [Macas, Sucúa, Gualaquiza, Limón Indanza, Santiago de Méndez, Palora,
+         San Juan Bosco, Taisha, Huamboya]
+      Zamora Chinchipe:
+        [Zamora, Yantzaza, Zumba, El Pangui, Centinela del Cóndor, Palanda, Guayzimi,
+         Paquisha]
+      El Oro:
+        [Machala, Santa Rosa, Pasaje, Huaquillas, El Guabo, Zaruma, Piñas, Arenillas,
+         Portovelo, Atahualpa]
+      Loja:
+        [Loja, Catamayo, Macará, Cariamanga, Gonzanamá, Vilcabamba, Saraguro, Paltas,
+         Alamor, Celica, Zapotillo, Amaluza]
+      Santa Elena:
+        [Santa Elena, La Libertad, Salinas, Ballenita, Manglaralto, Montañita, Olón,
+         Ayangue, Anconcito, Chanduy]
+
+  # No se atiende (confirmado por el cliente el 29/9/2026). No figura en ninguna
+  # zona del documento, y sin esto caeria en "no la encontre" en vez de descarte.
+  galapagos:
+    provincias:
+      Galápagos:
+        [Puerto Ayora, Puerto Baquerizo Moreno, Santa Cruz, San Cristóbal, Isabela,
+         Floreana, Baltra]

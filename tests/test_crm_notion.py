@@ -26,7 +26,7 @@ def destino_notion(monkeypatch):
     obtener_settings.cache_clear()
 
 COMPLETO = {
-    "linea": "arquitectonico", "objetivo": "control_solar", "zona": "quito_y_valles",
+    "linea": "arquitectonico", "objetivo": "control_solar", "superficie": "ventanas", "zona": "quito_y_valles",
     "metros_cuadrados": 32, "garantia_anios": 10, "aplicacion": "oficina",
     "urgencia": "inmediato", "tipo_cliente": "empresa", "disponibilidad": "martes",
 }
@@ -55,7 +55,7 @@ async def test_las_propiedades_traducen_el_documento(pool_en_transaccion, sin_pr
     assert props["Score"]["number"] == doc.lead["score"]
     assert props["Teléfono"]["phone_number"] == "+593987112233"
     assert props["Presupuesto estimado"]["number"] == 42 * 32
-    assert props["Producto sugerido"]["select"]["name"] == "Control Solar Arquitectónico"
+    assert props["Producto sugerido"]["select"]["name"] == "Control Solar Ventanas"
     assert props["Llamar antes de"]["date"]["start"]
 
 

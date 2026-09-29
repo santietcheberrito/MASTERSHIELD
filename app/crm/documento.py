@@ -19,16 +19,22 @@ from typing import Any
 from app import db
 from app.canales import whatsapp
 from app.config import obtener_settings
-from app.precios import PRODUCTO_POR_OBJETIVO, cotizar
+from app.precios import cotizar, producto_para, producto_para_cotizar
 from app.scoring import CONVERSANDO, DERIVADA, Puntaje, puntuar
 
 logger = logging.getLogger(__name__)
 
 CANALES = {"telegram": "Telegram", "whatsapp": "WhatsApp", "consola": "Consola"}
+# Como se lee cada zona en el lead. El asesor necesita el lugar (va en `ciudad`)
+# y la zona le dice el minimo y la lista de precios que se le informo.
 ZONAS = {
-    "quito_y_valles": "Quito y valles",
-    "otra_ciudad": "Otra ciudad del país",
-    "fuera_del_pais": "Fuera de Ecuador",
+    "quito_y_valles": "Quito y valles (mínimo 5 m²)",
+    "pichincha_cercana": "Pichincha, zonas cercanas (mínimo 10 m²)",
+    "zona_azul": "Zona azul (mínimo 15 m²)",
+    "zona_verde": "Zona verde (mínimo 20 m²)",
+    "zona_roja": "Zona roja (mínimo 25 m²)",
+    "galapagos": "Galápagos (no se atiende)",
+    "fuera_del_pais": "Fuera de Ecuador (no se atiende)",
 }
 LINEAS = {"arquitectonico": "Arquitectónico", "vehicular": "Vehicular"}
 APLICACIONES = {
@@ -36,12 +42,14 @@ APLICACIONES = {
     "local": "Local", "vehiculo": "Vehículo",
 }
 URGENCIAS = {"inmediato": "Inmediato", "semanas": "Semanas", "explorando": "Explorando"}
+FRANJAS = {"manana": "por la mañana", "tarde": "por la tarde"}
 TIPOS_CLIENTE = {
     "particular": "Particular", "empresa": "Empresa",
     "constructora_o_arquitecto": "Constructora o arquitecto",
 }
 PRODUCTOS = {
-    "control_solar_arquitectonico": "Control Solar Arquitectónico",
+    "control_solar_ventanas": "Control Solar Ventanas",
+    "control_solar_techos": "Control Solar Techos",
     "privacidad_arquitectonica": "Privacidad Arquitectónica",
     "seguridad_arquitectonica": "Seguridad Arquitectónica",
     "seguridad_vehicular": "Seguridad Vehicular",
@@ -110,6 +118,18 @@ async def _archivos_del_cliente(conversacion_id: int, canal: str) -> list[dict[s
     return encontrados
 
 
+def franja_de_llamado(disponibilidad: str | None) -> str | None:
+    """Cuando llamar, como lo lee una persona.
+
+    Desde el 11/9/2026 se guarda una franja (`manana` o `tarde`). Las
+    conversaciones anteriores tienen texto libre —"el jueves por la mañana"— y
+    ese sale tal cual.
+    """
+    if not disponibilidad:
+        return None
+    return FRANJAS.get(disponibilidad, disponibilidad)
+
+
 def _texto_de_la_tarea(
     nombre: str,
     telefono: str | None,
@@ -157,7 +177,7 @@ def _presupuesto(datos: dict[str, Any]) -> float | None:
     mismo un trabajo de 10 m2 que uno de 200— y para eso el numero sigue
     sirviendo. Es interno: nunca se le dice al cliente.
     """
-    id_producto = PRODUCTO_POR_OBJETIVO.get((datos.get("linea"), datos.get("objetivo")))
+    id_producto = producto_para_cotizar(datos)
     if not id_producto:
         return None
     resultado = cotizar(
@@ -170,7 +190,7 @@ def _presupuesto(datos: dict[str, Any]) -> float | None:
 
 
 def _producto(datos: dict[str, Any]) -> str | None:
-    id_producto = PRODUCTO_POR_OBJETIVO.get((datos.get("linea"), datos.get("objetivo")))
+    id_producto = producto_para(datos)
     return PRODUCTOS.get(id_producto) if id_producto else None
 
 
@@ -185,7 +205,11 @@ def resumir(datos: dict[str, Any], puntaje: Puntaje, presupuesto: float | None) 
     if datos.get("aplicacion"):
         partes.append(APLICACIONES.get(datos["aplicacion"], datos["aplicacion"]).lower())
     if datos.get("zona"):
-        partes.append(ZONAS.get(datos["zona"], datos["zona"]))
+        zona = ZONAS.get(datos["zona"], datos["zona"])
+        # Con la ciudad relevada se dice "Cuenca (otra ciudad del pais)": el
+        # asesor necesita el lugar, y la zona explica el precio y el minimo.
+        ciudad = datos.get("ciudad")
+        partes.append(f"{ciudad} ({zona.lower()})" if ciudad else zona)
 
     lineas = [" · ".join(partes) if partes else "Consulta sin datos suficientes"]
 
@@ -194,7 +218,7 @@ def resumir(datos: dict[str, Any], puntaje: Puntaje, presupuesto: float | None) 
     if datos.get("modelo_vehiculo"):
         lineas.append(f"Vehículo: {datos['modelo_vehiculo']}")
     if datos.get("disponibilidad"):
-        lineas.append(f"Disponible: {datos['disponibilidad']}")
+        lineas.append(f"Llamar: {franja_de_llamado(datos['disponibilidad'])}")
     if datos.get("medidas_detalle"):
         lineas.append(f"Medidas: {datos['medidas_detalle']}")
 
@@ -273,6 +297,7 @@ async def armar(conversacion_id: int) -> Documento:
             "canal": CANALES.get(fila["canal"], fila["canal"]),
             "telefono": fila["telefono"],
             "zona": ZONAS.get(datos.get("zona")),
+            "ciudad": datos.get("ciudad"),
             "linea": LINEAS.get(datos.get("linea")),
             "producto": _producto(datos),
             "metros_cuadrados": datos.get("metros_cuadrados"),
@@ -281,7 +306,7 @@ async def armar(conversacion_id: int) -> Documento:
             "aplicacion": APLICACIONES.get(datos.get("aplicacion")),
             "urgencia": URGENCIAS.get(datos.get("urgencia")),
             "tipo_cliente": TIPOS_CLIENTE.get(datos.get("tipo_cliente")),
-            "disponibilidad": datos.get("disponibilidad"),
+            "disponibilidad": franja_de_llamado(datos.get("disponibilidad")),
             "modelo_vehiculo": datos.get("modelo_vehiculo"),
             "medidas_detalle": datos.get("medidas_detalle"),
             "motivo_derivacion": motivo_derivacion,
@@ -300,7 +325,8 @@ async def armar(conversacion_id: int) -> Documento:
             # notificaciones de Kommo es JavaScript de widget, no un endpoint.
             # Asi que la tarea urgente ES el aviso.
             "texto": _texto_de_la_tarea(
-                nombre, fila["telefono"], datos.get("disponibilidad"), motivo_derivacion
+                nombre, fila["telefono"], franja_de_llamado(datos.get("disponibilidad")),
+                motivo_derivacion,
             ),
             "vence": proxima_fecha_de_llamado(),
             "urgente": motivo_derivacion is not None,

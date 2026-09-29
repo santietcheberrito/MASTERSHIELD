@@ -18,7 +18,7 @@ async def _conversacion(conexion, *, pendiente=True, intentos=1, vencida=True):
         "VALUES ('consola', 'reintento-test', 'Nora Vaca', '+593999123456', $1::jsonb, "
         "'calificada') RETURNING id",
         {
-            "linea": "arquitectonico", "objetivo": "control_solar",
+            "linea": "arquitectonico", "objetivo": "control_solar", "superficie": "ventanas",
             "zona": "quito_y_valles", "metros_cuadrados": 25,
             "telefono": "0999123456", "disponibilidad": "el jueves",
         },

@@ -115,8 +115,12 @@ class ProveedorOpenAI:
     el prefijo: no se marca, pero se gana igual si lo estatico va primero, que
     es como esta armado."""
 
-    def __init__(self, api_key: str, modelo: str, max_tokens: int = 4096) -> None:
+    def __init__(
+        self, api_key: str, modelo: str, max_tokens: int = 4096, esfuerzo: str = "minimal"
+    ) -> None:
         from openai import AsyncOpenAI
+
+        self._esfuerzo = esfuerzo
 
         self._cliente = AsyncOpenAI(api_key=api_key)
         self._modelo = modelo
@@ -137,7 +141,10 @@ class ProveedorOpenAI:
         if self._razona:
             # Esto es una conversacion de ventas, no un problema de logica: no
             # hace falta que razone largo, y razonar cuesta tokens y latencia.
-            extra["reasoning_effort"] = "low"
+            # Medido el 15/9/2026 con el prompt real: "low" tardaba 8 a 19
+            # segundos por llamada y "minimal" 1.3 a 2. Las reglas que importan
+            # (orden, precios, repetidos) ya estan en el codigo.
+            extra["reasoning_effort"] = self._esfuerzo
 
         respuesta = await self._cliente.chat.completions.create(
             model=self._modelo,
@@ -187,9 +194,9 @@ class ProveedorOpenAI:
         return mensajes
 
 
-def crear(proveedor: str, api_key: str, modelo: str) -> Proveedor:
+def crear(proveedor: str, api_key: str, modelo: str, esfuerzo: str = "minimal") -> Proveedor:
     if proveedor == "anthropic":
         return ProveedorAnthropic(api_key, modelo)
     if proveedor == "openai":
-        return ProveedorOpenAI(api_key, modelo)
+        return ProveedorOpenAI(api_key, modelo, esfuerzo=esfuerzo)
     raise ValueError(f"proveedor de modelo desconocido: {proveedor!r}")

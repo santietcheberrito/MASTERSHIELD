@@ -19,7 +19,7 @@ pytestmark = [pytest.mark.db, pytest.mark.usefixtures("settings_de_prueba")]
 QUITO = ZoneInfo("America/Guayaquil")
 
 COMPLETO = {
-    "linea": "arquitectonico", "objetivo": "control_solar", "zona": "quito_y_valles",
+    "linea": "arquitectonico", "objetivo": "control_solar", "superficie": "ventanas", "zona": "quito_y_valles",
     "metros_cuadrados": 25, "garantia_anios": 10, "aplicacion": "oficina",
     "urgencia": "inmediato", "tipo_cliente": "empresa", "telefono": "0999123456",
     "disponibilidad": "jueves por la mañana",
@@ -48,7 +48,7 @@ async def test_arma_el_lead_completo(pool_en_transaccion, sin_promocion):
     doc = await documento.armar(await _conversacion(pool_en_transaccion, COMPLETO))
 
     assert doc.lead["etapa"] == scoring.ALTA
-    assert doc.lead["producto"] == "Control Solar Arquitectónico"
+    assert doc.lead["producto"] == "Control Solar Ventanas"
     assert doc.lead["presupuesto"] == 42 * 25
     assert doc.lead["zona"] == "Quito y valles"
     assert doc.lead["garantia"] == "10 años"
@@ -84,6 +84,16 @@ async def test_la_tarea_dice_cuando_llamar(pool_en_transaccion):
     franja enterrada en un campo del lead, "hoy en una hora" no la ve nadie."""
     doc = await documento.armar(await _conversacion(pool_en_transaccion, COMPLETO))
     assert "jueves por la mañana" in doc.tarea["texto"]
+
+
+async def test_la_franja_se_lee_como_la_diria_una_persona(pool_en_transaccion):
+    """Desde el 11/9 se guarda `manana` o `tarde`. El asesor lee "por la tarde",
+    no el valor interno."""
+    doc = await documento.armar(
+        await _conversacion(pool_en_transaccion, {**COMPLETO, "disponibilidad": "tarde"}))
+    assert doc.tarea["texto"].endswith("— por la tarde")
+    assert doc.lead["disponibilidad"] == "por la tarde"
+    assert "Llamar: por la tarde" in doc.nota
 
 
 async def test_sin_disponibilidad_la_tarea_no_queda_colgada(pool_en_transaccion):
@@ -207,8 +217,35 @@ async def test_la_estimacion_del_crm_usa_el_precio_que_rige_hoy(pool_en_transacc
     Sin `sin_promocion`, así que usa el precio que rige de verdad.
     """
     doc = await documento.armar(await _conversacion(pool_en_transaccion, COMPLETO))
-    precios = informar_precios("control_solar_arquitectonico", "quito_y_valles")
+    precios = informar_precios("control_solar_ventanas", "quito_y_valles")
     de_diez = next(c for c in precios.calidades if c.garantia_anios == 10)
     vigente = de_diez.precio_especial or de_diez.precio_normal
 
     assert doc.lead["presupuesto"] == vigente * 25
+
+
+# --- la ciudad en la nota del asesor ------------------------------------------
+
+def _puntaje():
+    return scoring.Puntaje(score=50, clasificacion="tibio", etapa="Conversando")
+
+
+def test_la_nota_dice_la_ciudad_y_la_zona(settings_de_prueba):
+    """"Otra ciudad del país" no le sirve a nadie para subirse a un auto: el
+    asesor necesita el lugar, y la zona explica el precio (16/9/2026)."""
+    resumen = documento.resumir(
+        {"linea": "arquitectonico", "objetivo": "seguridad", "zona": "otra_ciudad",
+         "ciudad": "Cuenca", "metros_cuadrados": 50},
+        _puntaje(), None)
+
+    assert "Cuenca (otra ciudad del país)" in resumen
+
+
+def test_sin_ciudad_relevada_la_nota_sale_igual(settings_de_prueba):
+    """Los leads anteriores al campo no la tienen."""
+    resumen = documento.resumir(
+        {"linea": "arquitectonico", "objetivo": "seguridad", "zona": "quito_y_valles"},
+        _puntaje(), None)
+
+    assert "Quito y valles" in resumen
+    assert "(" not in resumen.split("·")[-1], "sin ciudad no se abre un parentesis vacio"

@@ -19,10 +19,11 @@ from datetime import datetime
 
 import asyncpg
 
-from app import db, humanizacion, limites, registro
+from app import audio, db, fichas, humanizacion, limites, registro
 from app.agente import herramientas, loop
 from app.canales import telegram, whatsapp
 from app.config import obtener_settings
+from app.fichas import Video
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,14 @@ LOCK_SEGUNDOS = 120
 # indicador de "escribiendo". Medido contra la API real: el envio apaga el
 # indicador, y las dos ordenes salen tan juntas que el apagado gana.
 RESPIRO_ANTES_DEL_INDICADOR = 1.2
+
+# Lo que espera el primer globo de la respuesta. Poco, porque el indicador de
+# "escribiendo" se enciende al empezar el turno y la persona ya lo vio.
+PAUSA_PRIMER_MENSAJE = 1.0
+
+# Lo que se espera antes de mandar el video. No depende de un largo como el
+# texto: es el rato de buscar el archivo y adjuntarlo.
+PAUSA_ANTES_DEL_VIDEO = 2.5
 
 # Un turno que falla se reintenta, pero no para siempre: despues de esto se
 # posterga una hora para no gastar el loop en algo que esta roto.
@@ -65,7 +74,7 @@ _TOMAR = """
 """
 
 _MENSAJES_DEL_TURNO = """
-    SELECT id, tipo, contenido, id_externo
+    SELECT id, tipo, contenido, id_externo, payload
     FROM mensajes
     WHERE conversacion_id = $1 AND NOT procesado AND rol = 'cliente'
     ORDER BY id
@@ -136,9 +145,35 @@ _DATOS_CONVERSACION = "SELECT canal, identificador FROM conversaciones WHERE id 
 # en false, el indice parcial `mensajes_sin_procesar_ix` acumula cada respuesta
 # que el bot dio en su vida y la consulta del worker se va poniendo mas cara.
 _GUARDAR_RESPUESTA = """
-    INSERT INTO mensajes (conversacion_id, rol, contenido, id_externo, procesado)
-    VALUES ($1, 'agente', $2, $3, true)
+    INSERT INTO mensajes (conversacion_id, rol, contenido, id_externo, procesado, tipo)
+    VALUES ($1, 'agente', $2, $3, true, $4)
 """
+
+
+async def transcribir_audios(
+    conversacion_id: int, filas: list[asyncpg.Record]
+) -> list[dict]:
+    """Las notas de voz del turno, pasadas a texto antes de armarlo.
+
+    La transcripcion se guarda en el mensaje: el historial de los turnos
+    siguientes la lleva sola, el asesor la lee en la nota del CRM y no se
+    vuelve a bajar el audio. Si no se pudo, el mensaje queda como estaba y el
+    agente ve el aviso de que llego un audio.
+    """
+    mensajes = [dict(f) for f in filas]
+    for mensaje in mensajes:
+        if mensaje["tipo"] != "audio" or (mensaje["contenido"] or "").strip():
+            continue
+        texto = await audio.texto_de_la_nota(mensaje.get("payload") or {})
+        if not texto:
+            logger.warning("nota de voz sin transcribir | conversacion=%s mensaje=%s",
+                           conversacion_id, mensaje["id"])
+            continue
+        mensaje["contenido"] = texto
+        await db.ejecutar(
+            "UPDATE mensajes SET contenido = $2 WHERE id = $1", mensaje["id"], texto
+        )
+    return mensajes
 
 
 def armar_turno(conversacion_id: int, filas: list[asyncpg.Record]) -> Turno | None:
@@ -155,6 +190,9 @@ def armar_turno(conversacion_id: int, filas: list[asyncpg.Record]) -> Turno | No
         if fila["tipo"] == "texto":
             if fila["contenido"]:
                 partes.append(fila["contenido"])
+        elif fila["tipo"] == "audio" and fila["contenido"]:
+            # Ya transcrita: lo que dijo es el mensaje, no un adjunto.
+            partes.append(f"[nota de voz] {fila['contenido']}")
         elif fila["contenido"]:
             # Una foto con epigrafe: el texto importa y el adjunto tambien.
             partes.append(f"[{fila['tipo']}] {fila['contenido']}")
@@ -224,6 +262,12 @@ async def procesar_turno(turno: Turno) -> None:
     if await _uso_anomalo(turno):
         return
 
+    # "Escribiendo..." desde que el turno arranca, mientras el agente piensa. La
+    # persona ve que alguien le esta contestando en vez de un chat quieto, y el
+    # primer globo puede salir sin otra pausa encima (15/9/2026: el cliente pidio
+    # respuestas mas rapidas).
+    await _mostrar_escribiendo(turno, 0.01)
+
     # La bienvenida es texto de marca y sale igual siempre, asi que no pasa por
     # el modelo. Con dos ejemplos parecidos en el prompt, una de cada dos veces
     # se comia la linea de bienvenida, y es lo primero que lee un cliente.
@@ -236,7 +280,7 @@ async def procesar_turno(turno: Turno) -> None:
         await _enviar_partes(turno, bienvenida())
         return
 
-    respuesta = await loop.responder(turno.conversacion_id)
+    respuesta = await loop.responder(turno.conversacion_id, turno.ultimo_id)
 
     logger.info(
         "respuesta | conversacion=%s iteraciones=%s herramientas=%s "
@@ -250,6 +294,12 @@ async def procesar_turno(turno: Turno) -> None:
         respuesta.texto.replace("\n", " / "),
     )
 
+    if respuesta.descartada:
+        # Llego otro mensaje mientras pensaba: el turno se rehace con todo.
+        logger.info("turno cortado antes de terminar: llego otro mensaje | "
+                    "conversacion=%s", turno.conversacion_id)
+        return
+
     if respuesta.silencio_deliberado:
         # No es lo mismo que un turno vacio: el agente miro lo que quedo sin
         # contestar y decidio que no pedia respuesta. Queda en `eventos`.
@@ -257,13 +307,48 @@ async def procesar_turno(turno: Turno) -> None:
                     turno.conversacion_id)
         return
 
-    if not respuesta.texto:
+    if not (respuesta.texto or respuesta.fichas or respuesta.lista_de_precios):
         # Puede pasar si el modelo solo llamo herramientas y se agotaron las
         # iteraciones. No se manda nada, pero queda el log para investigarlo.
         logger.warning("el agente no produjo texto | conversacion=%s", turno.conversacion_id)
         return
 
-    await _enviar_partes(turno, humanizacion.partir(respuesta.texto))
+    # Primero la descripcion oficial —que es la respuesta a lo que preguntaron—
+    # y despues lo del modelo, que es el paso siguiente. La ficha no pasa por
+    # `partir`: cortada en pedazos deja de ser el bloque que escribio la empresa.
+    partes: list[str | Video] = []
+    # Antes de la ficha, la linea del agente que asiente y presenta lo que viene:
+    # un bloque largo que aparece sin aviso se lee como un folleto.
+    if respuesta.fichas and respuesta.introduccion_fichas:
+        partes.append(humanizacion.con_emoji(respuesta.introduccion_fichas))
+    partes += await fichas.armar_envio(turno.conversacion_id, respuesta.fichas)
+    # La lista de precios va despues de la ficha y antes del modelo, por lo
+    # mismo: es la respuesta, y lo que escribe el modelo es el paso siguiente.
+    if respuesta.lista_de_precios:
+        if respuesta.introduccion_precios:
+            partes.append(humanizacion.con_emoji(respuesta.introduccion_precios))
+        partes.append(respuesta.lista_de_precios)
+    # Lo que escribe el modelo: una linea con --- separa un globo del siguiente.
+    # Los globos largos llevan un emoji del tema. Las fichas y la lista no se
+    # tocan: ya los escribio MasterShield.
+    if respuesta.texto:
+        partes += [humanizacion.con_emoji(g) for g in humanizacion.partir_globos(respuesta.texto)]
+    # Al cerrar, el video de MasterShield: la persona ya dejo sus datos y lo
+    # ultimo que ve es como trabajan y como quedan las terminaciones (pedido del
+    # cliente, 15/9/2026). Si ya salio con una ficha, no se repite.
+    if await _cierra_la_conversacion(turno.conversacion_id, respuesta):
+        partes.append(fichas.VIDEO_PRODUCTOS)
+    await _enviar_partes(turno, partes)
+
+
+async def _cierra_la_conversacion(conversacion_id: int, respuesta: loop.Respuesta) -> bool:
+    """Si este es el turno en que la conversacion se despide y falta el video."""
+    if not fichas.VIDEO_PRODUCTOS.ruta.exists():
+        return False
+    cierra = "finalizar_calificacion" in respuesta.herramientas_usadas or bool(await db.valor(
+        "SELECT 1 FROM eventos WHERE conversacion_id = $1 "
+        "AND tipo = 'calificacion_finalizada' LIMIT 1", conversacion_id))
+    return cierra and not await fichas.video_ya_enviado(conversacion_id)
 
 
 async def _quedo_vieja(turno: Turno) -> bool:
@@ -283,7 +368,7 @@ async def _quedo_vieja(turno: Turno) -> bool:
         return False
 
 
-async def _enviar_partes(turno: Turno, partes: list[str]) -> None:
+async def _enviar_partes(turno: Turno, partes: list[str | Video]) -> None:
     """Manda los mensajes con sus pausas, como los mandaria una persona.
 
     Se corta apenas la persona escribe algo nuevo: los mensajes que faltan
@@ -305,7 +390,12 @@ async def _enviar_partes(turno: Turno, partes: list[str]) -> None:
 
         # "Escribiendo..." y despues la pausa: el indicador solo tiene sentido
         # mientras se supone que se esta tipeando, no durante toda la espera.
-        espera = humanizacion.demora_de_escritura(parte)
+        es_video = isinstance(parte, Video)
+        espera = PAUSA_ANTES_DEL_VIDEO if es_video else humanizacion.demora_de_escritura(parte)
+        # El primer globo no espera como si recien empezara a tipear: el
+        # indicador ya estuvo encendido mientras el agente pensaba.
+        if numero == 1 and not es_video:
+            espera = min(espera, PAUSA_PRIMER_MENSAJE)
 
         # Enviar un mensaje apaga el indicador. Si el del mensaje siguiente se
         # dispara en el mismo instante en que sale el anterior, Meta recibe
@@ -330,11 +420,22 @@ async def _enviar_partes(turno: Turno, partes: list[str]) -> None:
             )
             return
 
-        id_externo = await _enviar(turno, parte)
-        await db.ejecutar(_GUARDAR_RESPUESTA, turno.conversacion_id, parte, id_externo)
+        if es_video:
+            id_externo = await _enviar_video(turno, parte)
+            if id_externo is None:
+                # No salio. No se guarda, asi el proximo producto lo intenta de
+                # nuevo, y el resto de la respuesta sigue: sin video se entiende
+                # igual.
+                continue
+            contenido, tipo = parte.contenido, "video"
+        else:
+            id_externo = await _enviar(turno, parte)
+            contenido, tipo = parte, "texto"
+
+        await db.ejecutar(_GUARDAR_RESPUESTA, turno.conversacion_id, contenido, id_externo, tipo)
         logger.info(
             "mensaje %s/%s enviado tras %.1fs | conversacion=%s | %s",
-            numero, len(partes), espera, turno.conversacion_id, parte,
+            numero, len(partes), espera, turno.conversacion_id, contenido,
         )
 
 
@@ -438,6 +539,33 @@ async def _enviar(turno: Turno, texto: str) -> str | None:
     return None
 
 
+async def _enviar_video(turno: Turno, video: Video) -> str | None:
+    """Manda el video por el canal. Devuelve None si no salio, sin romper nada.
+
+    Un video que falla —el token no puede subir archivos, Meta lo rechaza— no
+    puede dejar a la persona sin la respuesta que viene detras.
+    """
+    settings = obtener_settings()
+    if turno.canal != "whatsapp":
+        logger.info("el canal %s no manda video: se sigue sin el", turno.canal)
+        return None
+    if not settings.whatsapp_token or not settings.whatsapp_phone_number_id:
+        logger.error("sin credenciales de WhatsApp: no se puede mandar el video")
+        return None
+    if not video.ruta.exists():
+        logger.error("no esta el archivo del video: %s", video.ruta)
+        return None
+    try:
+        return await whatsapp.enviar_video(
+            settings.whatsapp_token, settings.whatsapp_phone_number_id,
+            turno.identificador, video.ruta, leyenda=video.leyenda,
+        )
+    except Exception:
+        logger.exception("no se pudo mandar el video | conversacion=%s",
+                         turno.conversacion_id)
+        return None
+
+
 class Worker:
     def __init__(self, intervalo: float = 1.0, lote: int = 10) -> None:
         self.intervalo = intervalo
@@ -507,7 +635,9 @@ class Worker:
     ) -> None:
         try:
             filas = await db.consultar(_MENSAJES_DEL_TURNO, conversacion_id)
-            turno = armar_turno(conversacion_id, filas)
+            turno = armar_turno(
+                conversacion_id, await transcribir_audios(conversacion_id, filas)
+            )
 
             if turno is not None:
                 conversacion = await db.consultar_una(_DATOS_CONVERSACION, conversacion_id)

@@ -40,8 +40,11 @@ Falta esto:
 - **El documento menciona materiales de 15, 10 y 5 años, pero la lista de
   precios solo trae 10 y 5.** ¿Sigue existiendo el de 15 años? ¿A qué precio?
 - **Seguridad arquitectónica, ¿solo viene en 10 años de garantía?**
-- **Roof Shield®** (control solar exterior para pérgolas): ¿mismo precio que la
-  instalación interna o distinto?
+- ~~**Control solar para techos de vidrio: precio, garantías y mínimo.**~~
+  **Resuelto:** mismo precio y mismas dos calidades que ventanas, y los mismos
+  mínimos por zona.
+- **Roof Shield®** (control solar exterior para pérgolas): ¿sigue existiendo
+  ahora que techos es un producto propio? ¿Tiene precio distinto?
 - **El mínimo de 20 m² fuera de Quito, ¿aplica también a un trabajo vehicular?**
 
 ## 2. Vehicular · resuelto, con una duda
@@ -114,6 +117,18 @@ criterio de los vendedores. Para eso necesito su criterio, no el mío.
   1.52 m?
 - **El documento dice que también venden control solar vehicular**, pero el
   sitio solo lista seguridad vehicular. ¿Cuál de los dos está desactualizado?
+- **Las descripciones de producto salen tal cual, con cuatro retoques.** Se
+  corrigieron "eliminado", "remplaza" y "mateniendo", y "tus ventanas" pasó a
+  "sus ventanas": el agente nunca tutea y la ficha sale con su voz. Si prefieren
+  el texto original exacto, se vuelve atrás.
+- **El control solar "ayuda a mantener espacios más frescos"**, dice la
+  descripción nueva, y el documento de preguntas frecuentes insiste en que la
+  lámina no enfría. Las dos cosas se pueden sostener —entra menos calor, pero no
+  enfría como un aire acondicionado— y así lo explica el agente si le preguntan.
+  Conviene que lo confirmen.
+- **El video tiene un error de tipeo:** dice "satisfación" en lugar de
+  "satisfacción". Y hoy es el institucional de 28 segundos: cuando esté el clip
+  de los cuatro productos, se reemplaza el archivo y no hay que tocar código.
 
 ## 8. Kommo · cuando haya acceso
 

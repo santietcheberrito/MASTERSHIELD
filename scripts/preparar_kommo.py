@@ -51,7 +51,7 @@ CAMPOS = [
     ("zona", "Zona", "select", ["Quito y valles", "Otra ciudad del país", "Fuera de Ecuador"]),
     ("linea", "Línea", "select", ["Arquitectónico", "Vehicular"]),
     ("producto", "Producto sugerido", "select", [
-        "Control Solar Arquitectónico", "Privacidad Arquitectónica",
+        "Control Solar Ventanas", "Control Solar Techos", "Privacidad Arquitectónica",
         "Seguridad Arquitectónica", "Seguridad Vehicular"]),
     ("metros_cuadrados", "Metros cuadrados", "numeric", None),
     ("presupuesto", "Presupuesto estimado (sin IVA)", "numeric", None),
@@ -363,12 +363,28 @@ async def principal(revisar: bool, verificar: bool = False) -> int:
             print("  las etapas del agente quedan juntas, despues de la de entrada")
 
         # --- campos ---------------------------------------------------------
-        campos_actuales = {
-            c["name"]: c["id"]
-            for c in (await _get(cliente, "/leads/custom_fields"))
+        completos = {
+            c["name"]: c
+            for c in (await _get(cliente, "/leads/custom_fields?limit=250"))
             .get("_embedded", {}).get("custom_fields", [])
         }
+        campos_actuales = {nombre: c["id"] for nombre, c in completos.items()}
         por_crear = [c for c in CAMPOS if c[1] not in campos_actuales]
+
+        # Un select que ya existe puede haberse quedado sin opciones nuevas —paso
+        # cuando control solar se partio en dos—. Kommo rechaza un valor que no
+        # esta entre las opciones, asi que el lead entero no se cargaria. Se
+        # agregan las que faltan; las que sobran no se tocan, porque puede haber
+        # leads que las usen.
+        por_ampliar = []
+        for _clave, nombre, _tipo, opciones in CAMPOS:
+            existente = completos.get(nombre)
+            if not opciones or not existente:
+                continue
+            actuales = [e["value"] for e in existente.get("enums") or []]
+            nuevas = [o for o in opciones if o not in actuales]
+            if nuevas:
+                por_ampliar.append((existente, nuevas))
 
         print(f"\nCampos de lead: {len(campos_actuales)} existentes, {len(por_crear)} a crear")
         for _, nombre, tipo, _opciones in por_crear:
@@ -387,6 +403,23 @@ async def principal(revisar: bool, verificar: bool = False) -> int:
             for campo in creados.get("_embedded", {}).get("custom_fields", []):
                 campos_actuales[campo["name"]] = campo["id"]
                 print(f"    creado {campo['id']}  {campo['name']}")
+
+        for existente, nuevas in por_ampliar:
+            print(f"  ~ {existente['name']}: + {', '.join(nuevas)}")
+        if por_ampliar and not revisar:
+            for existente, nuevas in por_ampliar:
+                # Van TODAS las opciones, con su id: una que no se mande, Kommo
+                # la borra, y con ella el valor de los leads que la tenian.
+                enums = [{"id": e["id"], "value": e["value"], "sort": e.get("sort", i + 1)}
+                         for i, e in enumerate(existente.get("enums") or [])]
+                base = max((e["sort"] for e in enums), default=0)
+                enums += [{"value": v, "sort": base + i + 1} for i, v in enumerate(nuevas)]
+                r = await cliente.patch(f"/leads/custom_fields/{existente['id']}",
+                                        json={"name": existente["name"], "enums": enums})
+                if r.status_code >= 400:
+                    print(f"  ERROR {r.status_code}: {r.text[:400]}", file=sys.stderr)
+                    r.raise_for_status()
+                print(f"    ampliado {existente['id']}  {existente['name']}")
 
         config = await _catalogo_de_precios(cliente, config, revisar)
 

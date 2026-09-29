@@ -94,11 +94,20 @@ def test_las_pausas_entre_mensajes_varian():
 
 def test_la_pausa_entre_mensajes_da_tiempo_a_que_se_vea_escribiendo():
     """Con 1.5 segundos, Meta no alcanzaba a propagar el indicador y el segundo
-    y el tercer mensaje aparecían de la nada."""
-    assert all(
-        humanizacion.demora_de_escritura("¿Con quién tengo el gusto?") >= 3.0
-        for _ in range(50)
-    )
+    y el tercer mensaje aparecían de la nada. Desde el 14/9 el piso es 2.5: menos
+    el respiro antes de encenderlo, queda más de un segundo visible."""
+    from app import worker
+
+    for _ in range(50):
+        pausa = humanizacion.demora_de_escritura("¿Con quién tengo el gusto?")
+        assert pausa >= 2.5
+        assert pausa - worker.RESPIRO_ANTES_DEL_INDICADOR >= 1.3
+
+
+def test_la_pausa_no_pasa_de_cuatro_segundos():
+    """Con el modelo tardando 15 a 25 segundos, 7 más por globo hacía la
+    conversación lenta."""
+    assert humanizacion.demora_de_escritura("x" * 5000) <= 4.0
 
 
 def test_el_piso_de_la_pausa_no_es_siempre_el_mismo():

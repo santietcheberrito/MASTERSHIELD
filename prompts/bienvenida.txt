@@ -7,6 +7,17 @@
 #
 # Una linea = un mensaje de WhatsApp. Las lineas que empiezan con # son
 # comentarios y las vacias se ignoran. Se puede editar sin tocar codigo.
-Hola 👋🏻 Bienvenido al chat de asesoría y ventas de MasterShield®.
-Nos da mucho gusto que quiera conocer más de nuestro servicio de instalación de laminados para vidrio.
-¿Con quién tengo el gusto?
+#
+# Las tres primeras lineas son el texto que mando MasterShield el 11/9/2026. La
+# pregunta final es nuestra: el nombre es el primer dato obligatorio, y una
+# bienvenida que no pregunta nada deja a la persona sin saber que le toca
+# contestar. La ciudad va en la misma pregunta desde el 11/9/2026: define el
+# precio y el minimo de instalacion, y tenerla desde el principio evita
+# preguntarla recien antes de los precios. Se pregunta donde necesita la
+# instalacion y no desde donde escribe: alguien puede escribir desde Guayaquil
+# por una casa en Quito, y lo que define el precio es donde se instala
+# (15/9/2026).
+Hola🖐️
+¡Bienvenido al chat de asesoría y ventas de MASTERSHIELD!
+Nos da mucho gusto que quiera conocer más del mejor servicio de instalación de laminados para vidrio 🥳
+¿Con quién tengo el gusto y en qué ciudad necesita la instalación?

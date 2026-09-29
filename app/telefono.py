@@ -68,3 +68,18 @@ def normalizar(crudo: str | None, prefijo: str = "+593") -> str | None:
     # No se parece a un numero ecuatoriano y no trae codigo de pais. Antes que
     # inventarle uno, se deja sin normalizar para que alguien lo revise.
     return None
+
+
+def para_mostrar(e164: str | None, prefijo: str = "+593") -> str | None:
+    """El numero como lo escribe una persona en Ecuador: 0999772230.
+
+    E.164 es para la base y para Kommo. Decirle "+593999772230" a alguien de
+    Quito suena a maquina leyendo un campo. Un numero de otro pais sale tal cual.
+    """
+    if not e164:
+        return None
+    if e164.startswith(prefijo):
+        resto = e164[len(prefijo):]
+        if _CELULAR_EC.match(resto) or _FIJO_EC.match(resto):
+            return f"0{resto}"
+    return e164
