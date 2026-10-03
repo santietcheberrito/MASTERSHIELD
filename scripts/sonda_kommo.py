@@ -77,6 +77,7 @@ async def todo(ruta: str, request: Request) -> JSONResponse:
         cuerpo = dict(request.query_params)
 
     entrada = {
+        "crudo": crudo.decode("utf-8", "replace"),
         "cuando": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "metodo": request.method,
         "ruta": "/" + ruta,

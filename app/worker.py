@@ -19,7 +19,7 @@ from datetime import datetime
 
 import asyncpg
 
-from app import audio, db, fichas, humanizacion, limites, registro
+from app import audio, bandeja, db, fichas, humanizacion, limites, registro
 from app.agente import herramientas, loop
 from app.canales import telegram, whatsapp
 from app.config import obtener_settings
@@ -532,7 +532,20 @@ async def _mostrar_escribiendo(turno: Turno, segundos: float, parte: int = 1) ->
 
 
 async def _enviar(turno: Turno, texto: str) -> str | None:
-    """Manda un mensaje por el canal de la conversacion."""
+    """Manda un mensaje por el canal de la conversacion, y lo espeja en la bandeja."""
+    id_externo = await _enviar_por_el_canal(turno, texto)
+    if id_externo is not None:
+        # El equipo tiene que ver lo que contesto el agente, no solo lo que
+        # pregunto el cliente: sin eso, quien se mete a mitad de una
+        # conversacion no sabe que se dijo.
+        await bandeja.espejar(
+            turno.conversacion_id, turno.identificador, texto,
+            del_cliente=False, id_externo=id_externo,
+        )
+    return id_externo
+
+
+async def _enviar_por_el_canal(turno: Turno, texto: str) -> str | None:
     settings = obtener_settings()
     if turno.canal == "telegram":
         if not settings.telegram_bot_token:

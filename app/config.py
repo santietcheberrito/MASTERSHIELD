@@ -55,6 +55,23 @@ class Settings(BaseSettings):
     # Lo elige uno; Meta lo devuelve al dar de alta el webhook.
     whatsapp_verify_token: str = ""
 
+    # Chatwoot es la bandeja donde el equipo ve y contesta las conversaciones.
+    # No es un canal: el agente sigue hablandole a Meta directo y le espeja a
+    # Chatwoot lo que pasa, en los dos sentidos. Asi conserva el control del
+    # envio —las notas de voz, por ejemplo— y el equipo igual puede intervenir.
+    chatwoot_url: str = ""
+    chatwoot_token: str = ""
+    chatwoot_cuenta: int = 0
+    chatwoot_bandeja: int = 0
+    # Con esto se valida la firma de los webhooks de Chatwoot. Sin validar,
+    # cualquiera que descubra la URL le manda mensajes a nuestros clientes.
+    #
+    # Son dos y no uno: Chatwoot firma los avisos de la bandeja con el secreto
+    # de la bandeja, y los de la cuenta —cuando alguien resuelve una
+    # conversacion— con el del webhook de cuenta. Llegan a la misma URL.
+    chatwoot_secreto: str = ""
+    chatwoot_secreto_eventos: str = ""
+
     # Telegram es el canal de la etapa de pruebas, antes de conectar la Cloud
     # API de WhatsApp.
     telegram_bot_token: str = ""

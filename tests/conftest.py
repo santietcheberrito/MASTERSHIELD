@@ -217,6 +217,19 @@ def settings_de_prueba(monkeypatch):
 
 
 @pytest.fixture
+def con_promocion(monkeypatch):
+    """Pone la promoción del mes en vigencia, por el mismo motivo que su opuesta.
+
+    Un test que afirme "el especial es 37" pasa en septiembre y falla en
+    octubre, y esa falla no dice nada sobre el código: dice qué día se corrió.
+    Paso el 1/10/2026, con dos tests así.
+    """
+    from app import precios
+
+    monkeypatch.setattr(precios, "_especial_vigente", lambda cfg, hoy=None: True)
+
+
+@pytest.fixture
 def sin_promocion(monkeypatch):
     """Saca la promoción del mes, para que los precios no dependan del calendario.
 

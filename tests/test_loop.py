@@ -237,7 +237,7 @@ async def _conversacion_con_precio(conexion, texto_del_agente):
 
 
 async def test_el_precio_por_metro_consultado_en_el_turno_si_se_envia(
-    pool_en_transaccion, monkeypatch, settings_de_prueba
+    pool_en_transaccion, monkeypatch, settings_de_prueba, con_promocion
 ):
     conexion = pool_en_transaccion
     id_conv, proveedor = await _conversacion_con_precio(

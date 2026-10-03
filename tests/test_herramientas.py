@@ -184,7 +184,7 @@ async def test_metros_invalidos(pool_en_transaccion, valor):
 
 # --- consultar_precio -------------------------------------------------------
 
-async def test_informa_el_precio_por_metro_de_las_dos_calidades(pool_en_transaccion):
+async def test_informa_el_precio_por_metro_de_las_dos_calidades(pool_en_transaccion, con_promocion):
     """El cliente pidió que el agente diga cuánto vale el metro y nada más: el
     cálculo lo hace el asesor en la visita, con las medidas exactas."""
     id_conv = await _conversacion(

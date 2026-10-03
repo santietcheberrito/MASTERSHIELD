@@ -13,7 +13,7 @@ import logging
 from fastapi import APIRouter, Header, HTTPException, Request, Response
 from fastapi.responses import PlainTextResponse
 
-from app import db, humanizacion, ingesta
+from app import bandeja, db, humanizacion, ingesta
 from app.canales import telegram, whatsapp
 from app.config import obtener_settings
 
@@ -141,4 +141,72 @@ async def recibir_whatsapp(
         # lado y el indice unico sobre id_externo evita la respuesta duplicada.
         return Response(status_code=503)
 
+    return Response(status_code=200)
+
+
+@router.post("/webhook/chatwoot")
+async def recibir_chatwoot(
+    request: Request,
+    x_chatwoot_signature: str | None = Header(default=None),
+    x_chatwoot_timestamp: str | None = Header(default=None),
+) -> Response:
+    """Un asesor contesto desde la bandeja: sale por WhatsApp y el agente se calla.
+
+    Chatwoot avisa de **todos** los mensajes salientes, incluidos los que
+    espejamos nosotros. `respuesta_humana` descarta esos —van marcados— y las
+    notas privadas; sin eso, cada respuesta del agente volveria a salir una y
+    otra vez.
+    """
+    crudo = await request.body()
+    if not bandeja.firma_valida(crudo, x_chatwoot_signature, x_chatwoot_timestamp):
+        logger.warning("webhook de la bandeja con firma invalida")
+        raise HTTPException(status_code=403, detail="firma invalida")
+
+    try:
+        payload = json.loads(crudo)
+    except ValueError:
+        logger.warning("webhook de la bandeja con cuerpo que no es JSON")
+        return Response(status_code=200)
+
+    # Resolver no manda ningun mensaje: es la via para que alguien se haga cargo
+    # sin escribir todavia.
+    resuelta = bandeja.conversacion_resuelta(payload)
+    if resuelta is not None:
+        conversacion = await bandeja.conversacion_de(resuelta)
+        if conversacion is not None:
+            await ingesta.registrar_conversacion_tomada(
+                conversacion["id"], "resuelta en la bandeja")
+        return Response(status_code=200)
+
+    respuesta = bandeja.respuesta_humana(payload)
+    if respuesta is None:
+        return Response(status_code=200)
+
+    conversacion = await bandeja.conversacion_de(respuesta["conversacion"])
+    if conversacion is None:
+        logger.info("respuesta en la bandeja sobre una conversacion que no es nuestra | %s",
+                    respuesta["conversacion"])
+        return Response(status_code=200)
+
+    settings = obtener_settings()
+    if conversacion["canal"] != "whatsapp":
+        logger.error("la bandeja solo sabe contestar por WhatsApp, no por %s",
+                     conversacion["canal"])
+        return Response(status_code=200)
+
+    try:
+        await whatsapp.enviar(
+            settings.whatsapp_token, settings.whatsapp_phone_number_id,
+            conversacion["identificador"], respuesta["texto"],
+        )
+    except Exception:
+        logger.exception("no se pudo mandar por WhatsApp lo que escribio %s",
+                         respuesta["autor"])
+        # 500 para que Chatwoot reintente: el asesor cree que ya contesto.
+        return Response(status_code=500)
+
+    await ingesta.registrar_intervencion_humana(
+        conversacion["canal"], conversacion["identificador"],
+        respuesta["texto"], respuesta["id_externo"],
+    )
     return Response(status_code=200)

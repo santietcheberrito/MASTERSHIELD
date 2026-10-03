@@ -6,11 +6,12 @@ llamada al modelo ni al BSP. Todo el trabajo pesado es del worker.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import asyncpg
 
-from app import db
+from app import bandeja, db
 from app.config import obtener_settings
 from app.canales.base import MensajeEntrante
 
@@ -132,7 +133,29 @@ async def registrar(mensaje: MensajeEntrante, demora_seg: int) -> bool:
             "agendado": fila["agendado"],
         },
     )
+
+    # A la bandeja va todo, haya turno o no. Si el agente esta pausado porque
+    # un asesor se hizo cargo, es justo cuando esa persona mas necesita ver lo
+    # que le escriben: enganchar el espejo al turno la dejaba a ciegas.
+    #
+    # En segundo plano a proposito: el webhook tiene 500ms de presupuesto y
+    # esto es una llamada HTTP a otro servicio.
+    _en_segundo_plano(bandeja.espejar(
+        fila["conversacion_id"], mensaje.identificador, mensaje.texto,
+        del_cliente=True, nombre=mensaje.nombre, id_externo=mensaje.id_externo,
+    ))
     return True
+
+
+# Las tareas sueltas se guardan: sin una referencia viva, el recolector de
+# basura puede cancelarlas antes de que terminen.
+_en_vuelo: set[asyncio.Task] = set()
+
+
+def _en_segundo_plano(corrutina) -> None:
+    tarea = asyncio.create_task(corrutina)
+    _en_vuelo.add(tarea)
+    tarea.add_done_callback(_en_vuelo.discard)
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +191,48 @@ pend AS (
 )
 SELECT id FROM conv
 """
+
+
+_TOMADA_POR_UNA_PERSONA = """
+WITH conv AS (
+    UPDATE conversaciones SET
+        estado        = 'pausada',
+        pausada_hasta = now() + make_interval(hours => $2)
+    WHERE id = $1 AND estado <> 'derivada'
+    RETURNING id
+),
+pend AS (
+    DELETE FROM pendientes WHERE conversacion_id IN (SELECT id FROM conv)
+)
+SELECT id FROM conv
+"""
+
+
+async def registrar_conversacion_tomada(conversacion_id: int, motivo: str) -> bool:
+    """Alguien se hizo cargo sin escribir: el agente se aparta por un rato.
+
+    Resolver una conversacion en la bandeja no genera ningun mensaje, asi que
+    la deteccion por intervencion humana no la ve. Y mientras tanto la persona
+    que la tomo la esta atendiendo: si el agente contesta igual, hablan los dos.
+
+    Se pausa en vez de cerrar para siempre: si el cliente vuelve dentro de unos
+    dias con una consulta nueva, que haya que atenderla a mano porque alguien
+    apreto un boton una vez no le sirve a nadie. Al vencer, el agente ve que
+    hubo una persona en la conversacion y decide si corresponde contestar.
+    """
+    horas = obtener_settings().pausa_por_humano_horas
+    tomada = await db.valor(_TOMADA_POR_UNA_PERSONA, conversacion_id, horas)
+    if tomada is None:
+        return False
+
+    logger.info("conversacion tomada por una persona | conversacion=%s motivo=%s",
+                conversacion_id, motivo)
+    await db.ejecutar(
+        "INSERT INTO eventos (conversacion_id, tipo, estado, detalle) "
+        "VALUES ($1, 'pausada_por_humano', 'ok', $2)",
+        conversacion_id, {"motivo": motivo, "horas": horas},
+    )
+    return True
 
 
 async def registrar_intervencion_humana(
