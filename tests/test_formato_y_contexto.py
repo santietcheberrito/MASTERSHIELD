@@ -304,6 +304,35 @@ def test_el_numero_de_otro_pais_va_tal_cual_al_contexto():
     assert "como se escribe en Ecuador" not in bloque
 
 
+@pytest.mark.parametrize("zona, minimo", [
+    ("quito_y_valles", 5), ("pichincha_cercana", 10), ("zona_azul", 15),
+    ("zona_verde", 20), ("zona_roja", 25), (None, None), ("inventada", None),
+])
+def test_el_minimo_sale_de_la_zona(zona, minimo):
+    assert contexto.minimo_de(zona) == minimo
+
+
+def test_el_contexto_trae_el_minimo_de_instalacion():
+    """29/9/2026: el agente escribio "el mínimo es de {minimo} m²" tal cual.
+    El minimo se dice ANTES de pedir los metros, y ahi todavia no se llamo a
+    consultar_precio: si no esta en el contexto, no tiene con que completarlo."""
+    estado = contexto.Estado("referencia", ["referencia"], apurada=False, ya_cerrada=False)
+    bloque = contexto.formatear(estado, [], [], None, minimo_m2=20)
+    assert "Mínimo de instalación en esta zona: 20 m²" in bloque
+
+
+def test_sin_zona_no_se_habla_del_minimo():
+    estado = contexto.Estado("nombre_ciudad", ["zona"], apurada=False, ya_cerrada=False)
+    assert "Mínimo" not in contexto.formatear(estado, [], [], None)
+
+
+def test_la_plantilla_de_los_metros_dice_de_donde_sale_el_minimo():
+    respuestas = {r["clave"]: r for r in _script_de_carga().leer_respuestas()}
+    instr = respuestas["pedir_metros"]["instrucciones"]
+    assert "Minimo de instalacion en esta zona" in instr
+    assert "{minimo}" in respuestas["pedir_metros"]["respuesta"]
+
+
 def test_el_contexto_dice_cuando_lo_llama_el_asesor():
     """La oficina atiende de lunes a viernes: el agente no puede prometer una
     llamada un sabado a la noche (15/9/2026)."""
@@ -374,6 +403,55 @@ def test_la_plantilla_pide_guardar_ciudad_y_zona():
     assert "la zona de precios la deduce el sistema" in instr
     # Con la ciudad ya sabida, pedirla de nuevo es el bug que se arreglo.
     assert "no la vuelva a preguntar" in respuestas["pedir_ciudad"]["situacion"]
+
+
+# --- que se ofrece al cerrar, segun la zona ----------------------------------
+# En Quito y sus valles la visita tecnica es gratis y esta cerca; fuera de Quito
+# se ofrece la llamada y el asesor ve si la visita corresponde (29/9/2026).
+
+@pytest.mark.parametrize("zona, clave, entra", [
+    ("quito_y_valles", "dar_precios", True),
+    ("quito_y_valles", "dar_precios_fuera_de_quito", False),
+    ("zona_verde", "dar_precios", False),
+    ("zona_verde", "dar_precios_fuera_de_quito", True),
+    ("pichincha_cercana", "dar_precios_fuera_de_quito", True),
+    ("zona_roja", "ofrecer_llamada", False),
+])
+def test_cada_zona_recibe_solo_su_oferta(zona, clave, entra):
+    respuestas = {r["clave"]: r for r in _script_de_carga().leer_respuestas()}
+    assert contexto.corresponde_a_la_zona(respuestas[clave], zona) is entra
+
+
+def test_una_respuesta_sin_zonas_sirve_en_todas():
+    assert contexto.corresponde_a_la_zona({"clave": "despedida_final"}, "zona_roja") is True
+    assert contexto.corresponde_a_la_zona({"clave": "x", "solo_zonas": None}, "") is True
+
+
+def test_sin_zona_no_se_ofrece_la_visita():
+    """Todavia no dijo la ciudad: no se le puede prometer una visita gratis."""
+    respuestas = {r["clave"]: r for r in _script_de_carga().leer_respuestas()}
+    assert contexto.corresponde_a_la_zona(respuestas["dar_precios"], "") is False
+
+
+def test_fuera_de_quito_no_se_promete_la_visita_gratis():
+    """Prometerla en Loja es prometer algo que la empresa no sostiene."""
+    respuestas = {r["clave"]: r for r in _script_de_carga().leer_respuestas()}
+    fuera = respuestas["dar_precios_fuera_de_quito"]
+    assert "visita" not in fuera["respuesta"].lower()
+    assert "sin costo" not in fuera["respuesta"].lower()
+    assert "llamada con un asesor de MasterShield" in fuera["respuesta"]
+    # Y la de Quito sigue ofreciendo la visita, con el texto del cliente.
+    assert "*visita técnica*" in respuestas["dar_precios"]["respuesta"]
+
+
+def test_las_zonas_de_las_plantillas_existen():
+    """Una zona mal escrita deja al agente sin nada que ofrecer al cerrar."""
+    import yaml
+    validas = set(yaml.safe_load(
+        (RAIZ / "config" / "productos.yaml").read_text(encoding="utf-8"))["zonas"])
+    for r in _script_de_carga().leer_respuestas():
+        for zona in r.get("solo_zonas") or []:
+            assert zona in validas, f"{r['clave']} apunta a una zona que no existe: {zona}"
 
 
 def test_el_conocimiento_se_parte_por_seccion():

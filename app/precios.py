@@ -125,6 +125,12 @@ def _producto(id_producto: str) -> dict[str, Any] | None:
     return None
 
 
+def minimo_de(zona: str | None) -> float | None:
+    """Los m2 minimos de instalacion de esa zona, de 5 a 25 segun el documento."""
+    datos = (configuracion().get("zonas") or {}).get(zona or "")
+    return (datos or {}).get("minimo_m2")
+
+
 def opciones_de(producto: dict[str, Any], zona: str | None) -> list[dict[str, Any]]:
     """Las calidades con su precio, que desde el 29/9/2026 viven en la zona.
 

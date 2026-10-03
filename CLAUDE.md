@@ -608,6 +608,43 @@ más de 16 MB y viene en H.264 High con B-frames, que Android no reproduce.
 `scripts/preparar_video.py` lo deja listo; cambiar el clip es correrlo con el
 archivo nuevo.
 
+**Las notas de voz** son dos, grabadas por Esteban, y salen pegadas a la lista
+de precios referenciales: `media/audio-quito-visita.ogg` en Quito y valles,
+donde se impulsa la visita técnica, y `media/audio-fuera-llamada.ogg` en las
+otras cuatro zonas, donde se impulsa la llamada. Acompañan al texto de la
+oferta, no lo reemplazan, y salen **una sola vez por conversación** (se mira en
+`mensajes`, igual que las fichas). Si el archivo no está o el envío falla, la
+respuesta sale igual sin la nota.
+
+**Salen con `voice: true`**, que es lo que hace que WhatsApp dibuje la burbuja
+de nota de voz. No está en la referencia de la Cloud API, pero la cuenta lo
+acepta. Sin el flag, un Ogg/Opus impecable llega igual con el ícono de
+auriculares, como un audio reenviado: la marca de nota de voz es del mensaje, no
+del archivo, y el archivo solo no alcanza.
+
+**Y van en Ogg/Opus y sin metadatos**, que son las otras dos mitades:
+
+- **Ogg/Opus** es el formato de las notas de voz de WhatsApp. En `.m4a` o
+  `.mp3` el mensaje llega igual y se escucha, pero con el ícono de auriculares
+  (probado sin el flag `voice`; con el flag no se probó, y no hace falta).
+- **Sin metadatos.** Un audio que sale de WhatsApp viene en `.mp4` y arrastra
+  sus tags (`creation_time`, `handler_name=Core Media Audio`); ffmpeg los copia
+  al header `OpusTags` y ahí Meta acepta la subida, acepta el envío, devuelve
+  wamid **y después no entrega**, con el error **131053** ("on processing it is
+  of type application/octet-stream"). El mismo archivo con `-map_metadata -1`
+  se entrega sin problema: probado uno contra otro el 30/9/2026, con esa
+  bandera como única diferencia.
+
+`scripts/preparar_audio.py` hace la conversión y verifica las dos cosas antes de
+dejar el archivo en `media/`; cambiar un audio es correrlo con el nuevo. Un test
+mira los archivos del repo y falla si alguno vuelve a traer metadatos.
+
+**Un envío que Meta acepta no es un envío que llegó.** El fallo viene después,
+por webhook, en un `status` con `errors`, y `whatsapp.entregas_fallidas` lo
+saca para que quede en el log como error. Sin eso, un mensaje que nunca llegó es
+indistinguible de uno entregado: el 30/9 los audios se mandaron tres veces antes
+de que alguien mirara ese webhook.
+
 ---
 
 ## Archivos que manda el cliente
@@ -725,6 +762,8 @@ tests/
 scripts/
   cargar_conocimiento.py   respuestas y catálogo a la base
   preparar_kommo.py        descubre IDs y carga el catálogo de precios
+  preparar_audio.py        una nota de voz lista para WhatsApp
+  preparar_video.py        el clip de productos listo para WhatsApp
   simular_conversacion.py
 ```
 

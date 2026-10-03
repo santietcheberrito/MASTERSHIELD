@@ -38,6 +38,16 @@ ETAPAS_VALIDAS = {"nombre_ciudad", "pedido", "superficie", "referencia", "precio
 SECCIONES_PRIORITARIAS = ("NO hace", "límites")
 
 
+def _zonas_validas() -> set[str]:
+    import yaml as _yaml
+    productos = _yaml.safe_load(
+        (RAIZ / "config" / "productos.yaml").read_text(encoding="utf-8"))
+    return set(productos.get("zonas") or {})
+
+
+ZONAS_VALIDAS = _zonas_validas()
+
+
 def leer_respuestas(ruta: Path = RESPUESTAS) -> list[dict]:
     datos = yaml.safe_load(ruta.read_text(encoding="utf-8"))
     filas = datos["respuestas"]
@@ -49,6 +59,11 @@ def leer_respuestas(ruta: Path = RESPUESTAS) -> list[dict]:
             raise ValueError(f"etapa desconocida en {f['clave']}: {f['etapa']}")
         if not (f.get("respuesta") or f.get("instrucciones")):
             raise ValueError(f"{f['clave']} no tiene respuesta ni instrucciones")
+        # Una zona mal escrita en `solo_zonas` deja al agente sin esa respuesta
+        # y sin aviso: en el cierre, sin nada que ofrecer.
+        for zona in f.get("solo_zonas") or []:
+            if zona not in ZONAS_VALIDAS:
+                raise ValueError(f"zona desconocida en {f['clave']}: {zona}")
     return filas
 
 
@@ -93,17 +108,20 @@ async def cargar() -> None:
                     await conexion.execute(
                         """
                         INSERT INTO respuestas (clave, etapa, situacion, respuesta,
-                                                instrucciones, activa, embedding, actualizado_en)
-                        VALUES ($1, $2, $3, $4, $5, true, $6::vector, now())
+                                                instrucciones, solo_zonas, activa,
+                                                embedding, actualizado_en)
+                        VALUES ($1, $2, $3, $4, $5, $6, true, $7::vector, now())
                         ON CONFLICT (clave) DO UPDATE SET
                             etapa = EXCLUDED.etapa, situacion = EXCLUDED.situacion,
                             respuesta = EXCLUDED.respuesta,
-                            instrucciones = EXCLUDED.instrucciones, activa = true,
+                            instrucciones = EXCLUDED.instrucciones,
+                            solo_zonas = EXCLUDED.solo_zonas, activa = true,
                             embedding = EXCLUDED.embedding, actualizado_en = now()
                         """,
                         f["clave"], f["etapa"], f["situacion"].strip(),
                         (f.get("respuesta") or "").strip(),
-                        (f.get("instrucciones") or "").strip(), vector_sql(v),
+                        (f.get("instrucciones") or "").strip(),
+                        f.get("solo_zonas") or None, vector_sql(v),
                     )
                 await conexion.execute(
                     "UPDATE respuestas SET activa = false WHERE NOT (clave = ANY($1::text[]))",

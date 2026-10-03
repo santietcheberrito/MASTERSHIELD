@@ -52,6 +52,56 @@ VIDEO_PRODUCTOS = Video(
 )
 
 
+@dataclass(frozen=True)
+class Audio:
+    """Una nota de voz grabada por el equipo, a mandar como un mensaje mas."""
+
+    ruta: Path
+    # Lo que queda en `mensajes` en lugar del audio: el modelo lo lee en los
+    # turnos siguientes y el asesor lo ve en la transcripcion.
+    descripcion: str
+
+    @property
+    def contenido(self) -> str:
+        return self.descripcion
+
+
+# Esteban, del equipo de MasterShield, grabo dos: una para Quito y sus valles,
+# donde el paso siguiente es la visita tecnica, y otra para el resto del pais,
+# donde se ofrece la llamada. Son el mismo mensaje que el texto de la oferta,
+# dicho por una persona, y salen pegados a la lista de precios (29/9/2026).
+#
+# Van por zona igual que las respuestas: prometer la visita en Loja es prometer
+# algo que la empresa no sostiene.
+AUDIO_POR_ZONA = {
+    "quito_y_valles": Audio(
+        ruta=RAIZ / "media" / "audio-quito-visita.ogg",
+        descripcion="[nota de voz de un asesor MS: los precios y la visita técnica]",
+    ),
+}
+_AUDIO_FUERA = Audio(
+    ruta=RAIZ / "media" / "audio-fuera-llamada.ogg",
+    descripcion="[nota de voz de un asesor MS: los precios y la llamada]",
+)
+for _zona in ("pichincha_cercana", "zona_azul", "zona_verde", "zona_roja"):
+    AUDIO_POR_ZONA[_zona] = _AUDIO_FUERA
+
+
+def audio_de_la_zona(zona: str | None) -> Audio | None:
+    """La nota de voz que acompaña a los precios en esa zona, si el archivo esta."""
+    audio = AUDIO_POR_ZONA.get(zona or "")
+    return audio if audio and audio.ruta.exists() else None
+
+
+async def audio_ya_enviado(conversacion_id: int) -> bool:
+    """Si esta persona ya recibio la nota de voz. Sale una vez por conversacion."""
+    return bool(await db.valor(
+        "SELECT 1 FROM mensajes WHERE conversacion_id = $1 AND rol = 'agente' "
+        "AND tipo = 'audio' LIMIT 1",
+        conversacion_id,
+    ))
+
+
 def disponibles() -> list[str]:
     """Los productos que tienen ficha, en el orden del catalogo."""
     return [p["id"] for p in configuracion()["productos"]

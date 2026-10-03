@@ -72,6 +72,10 @@ class Estado:
     ya_cerrada: bool = False
     # "imagen" o "video" si lo ultimo que mando la persona fue un archivo.
     adjunto: str = ""
+    # La zona de precios: decide que se ofrece al cerrar. En Quito y valles la
+    # visita tecnica es gratis y esta cerca; afuera se ofrece la llamada con un
+    # asesor y es el asesor quien ve si la visita corresponde (29/9/2026).
+    zona: str = ""
 
 
 PASO_SIGUIENTE = {
@@ -120,7 +124,7 @@ async def calcular_estado(conversacion_id: int, datos: dict[str, Any]) -> Estado
     adjunto = ultimo_tipo if ultimo_tipo in ("imagen", "video") else ""
 
     return Estado(etapa_segun(faltan, lista_enviada, ya_cerrada), faltan, apurada,
-                  ya_cerrada, adjunto)
+                  ya_cerrada, adjunto, datos.get("zona") or "")
 
 
 _cliente_openai = None
@@ -160,6 +164,20 @@ def claves_extra(estado: Estado) -> list[str]:
     return claves
 
 
+def corresponde_a_la_zona(respuesta: dict, zona: str) -> bool:
+    """Si esa respuesta se usa en esta zona.
+
+    Una respuesta puede declarar `solo_zonas` en el YAML: la oferta del cierre
+    es distinta en Quito —donde la visita tecnica es gratis— que en el resto del
+    pais, donde se ofrece la llamada. Se filtra aca y no se le deja elegir al
+    modelo: con las dos delante, elige cualquiera.
+    """
+    solo = respuesta.get("solo_zonas")
+    if not solo:
+        return True
+    return bool(zona) and zona in solo
+
+
 async def _respuestas(estado: Estado, vector: list[float] | None) -> list[dict]:
     # Tambien las del paso siguiente: con los metros el agente da los precios en
     # el mismo turno, y con los precios ofrece la llamada. Sin esto escribia la
@@ -167,7 +185,7 @@ async def _respuestas(estado: Estado, vector: list[float] | None) -> list[dict]:
     etapas = [estado.etapa, *PASO_SIGUIENTE.get(estado.etapa, [])]
     extra = claves_extra(estado)
     filas = await db.consultar(
-        "SELECT clave, situacion, respuesta, instrucciones FROM respuestas "
+        "SELECT clave, situacion, respuesta, instrucciones, solo_zonas FROM respuestas "
         "WHERE activa AND (etapa = ANY($1::text[]) OR clave = ANY($2::text[])) ORDER BY id",
         etapas, extra)
     elegidas = [dict(f) for f in filas]
@@ -175,13 +193,13 @@ async def _respuestas(estado: Estado, vector: list[float] | None) -> list[dict]:
     if vector is not None:
         vistas = [r["clave"] for r in elegidas]
         parecidas = await db.consultar(
-            "SELECT clave, situacion, respuesta, instrucciones, "
+            "SELECT clave, situacion, respuesta, instrucciones, solo_zonas, "
             "1 - (embedding <=> $1::vector) AS parecido FROM respuestas "
             "WHERE activa AND embedding IS NOT NULL AND NOT (clave = ANY($2::text[])) "
             "ORDER BY embedding <=> $1::vector LIMIT $3",
             vector_sql(vector), vistas, RESPUESTAS_POR_PARECIDO)
         elegidas += [dict(f) for f in parecidas if f["parecido"] >= PARECIDO_MINIMO]
-    return elegidas
+    return [r for r in elegidas if corresponde_a_la_zona(r, estado.zona)]
 
 
 async def _conocimiento(vector: list[float] | None) -> list[dict]:
@@ -194,10 +212,25 @@ async def _conocimiento(vector: list[float] | None) -> list[dict]:
     return [dict(f) for f in filas if f["parecido"] >= PARECIDO_MINIMO]
 
 
+def minimo_de(zona: str | None) -> float | None:
+    """Los m2 minimos de instalacion de esa zona. Vive en `precios`, que es quien
+    lee la configuracion de zonas; aca queda el nombre que ya usaban los
+    llamadores."""
+    from app.precios import minimo_de as desde_precios
+
+    return desde_precios(zona)
+
+
 def formatear(estado: Estado, respuestas: list[dict], conocimiento: list[dict],
-              telefono: str | None, cuando_llaman: str = "") -> str:
+              telefono: str | None, cuando_llaman: str = "",
+              minimo_m2: float | None = None) -> str:
     """El bloque que se agrega al mensaje de sistema de este turno."""
     partes = [f"# Paso actual: {ETAPAS.get(estado.etapa, estado.etapa)}"]
+    if minimo_m2:
+        # El minimo se dice ANTES de pedir los metros, y en ese momento todavia
+        # no se llamo a consultar_precio: sin este dato el agente escribia
+        # "{minimo}" tal cual, porque no tenia con que completarlo (29/9/2026).
+        partes.append(f"Mínimo de instalación en esta zona: {minimo_m2:g} m²")
     if cuando_llaman:
         # El agente atiende a cualquier hora; la oficina llama en la suya.
         partes.append(f"Cuándo lo llama el asesor, si cierran ahora: {cuando_llaman}")
@@ -257,4 +290,5 @@ async def armar(conversacion_id: int, datos: dict[str, Any] | None, texto_client
                 conversacion_id, estado.etapa, [r["clave"] for r in respuestas],
                 [c.get("titulo") for c in conocimiento])
     return formatear(estado, respuestas, conocimiento, telefono,
-                     obtener_settings().cuando_llaman())
+                     obtener_settings().cuando_llaman(),
+                     minimo_de(datos.get("zona")))

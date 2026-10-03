@@ -91,6 +91,31 @@ def _texto(mensaje: dict[str, Any]) -> str:
     return contenido.get("caption", "") if isinstance(contenido, dict) else ""
 
 
+def entregas_fallidas(payload: dict[str, Any]) -> list[tuple[str, str]]:
+    """Los mensajes nuestros que Meta acepto y despues no pudo entregar.
+
+    Meta responde 200 al enviar y recien avisa del fallo por este webhook, en un
+    `status` con `errors`. Sin mirarlo, un envio roto es indistinguible de uno
+    que llego: el 30/9/2026 los audios se mandaron tres veces sin saber que Meta
+    los estaba tirando con el error 131053.
+
+    Devuelve pares (wamid, motivo) para dejarlos en el log.
+    """
+    try:
+        cambio = payload["entry"][0]["changes"][0]["value"]
+    except (KeyError, IndexError, TypeError):
+        return []
+
+    fallidos = []
+    for estado in cambio.get("statuses") or []:
+        if estado.get("status") != "failed":
+            continue
+        error = (estado.get("errors") or [{}])[0]
+        detalle = (error.get("error_data") or {}).get("details") or error.get("title") or ""
+        fallidos.append((estado.get("id") or "", f"{error.get('code', '?')}: {detalle}"))
+    return fallidos
+
+
 def parsear(payload: dict[str, Any]) -> MensajeEntrante | None:
     """Devuelve None si el evento no es un mensaje entrante que nos interese.
 
@@ -326,6 +351,23 @@ DIAS_DE_VIDA_DE_UN_ARCHIVO_SUBIDO = 25
 _subidos: dict[tuple[str, int, int], tuple[str, datetime]] = {}
 
 
+# Meta acepta pocos tipos de audio y `mimetypes` no siempre acierta el que
+# quiere: para .ogg dice "audio/ogg" a secas y Meta pide el codec, y para .m4a
+# dice "audio/mp4a-latm", que rechaza.
+#
+# Las notas de voz van en .ogg porque es el unico formato que WhatsApp dibuja
+# como nota de voz; en .m4a llegan con el icono de auriculares, igual que un
+# audio reenviado. El .ogg tiene que salir sin metadatos o Meta lo acepta y
+# despues no lo entrega: ver `scripts/preparar_audio.py`.
+MIME_POR_EXTENSION = {
+    ".ogg": "audio/ogg; codecs=opus",
+    ".m4a": "audio/mp4",
+    ".mp3": "audio/mpeg",
+    ".aac": "audio/aac",
+    ".mp4": "video/mp4",
+}
+
+
 async def subir_media(token: str, phone_number_id: str, contenido: bytes,
                       mime: str, nombre: str) -> str:
     """Sube un archivo a Meta y devuelve el id con el que se manda."""
@@ -351,11 +393,46 @@ async def _id_del_archivo(token: str, phone_number_id: str, ruta: Path,
             and ahora - guardado[1] < timedelta(days=DIAS_DE_VIDA_DE_UN_ARCHIVO_SUBIDO)):
         return guardado[0]
 
-    mime = mimetypes.guess_type(ruta.name)[0] or "video/mp4"
+    mime = MIME_POR_EXTENSION.get(ruta.suffix) or mimetypes.guess_type(ruta.name)[0] or "video/mp4"
     media_id = await subir_media(token, phone_number_id, ruta.read_bytes(), mime, ruta.name)
     _subidos[clave] = (media_id, ahora)
     logger.info("archivo subido a Meta | %s -> %s", ruta.name, media_id)
     return media_id
+
+
+async def enviar_audio(token: str, phone_number_id: str, destino: str,
+                       ruta: Path) -> str | None:
+    """Manda un audio del disco como nota de voz.
+
+    Igual que el video: se sube la primera vez, se reusa el id, y si Meta lo
+    rechaza se sube de nuevo y se reintenta una vez.
+
+    Un audio no lleva leyenda: la API no la acepta. Lo que tenga que decirse va
+    en un mensaje aparte.
+
+    `voice` es lo que hace que WhatsApp dibuje la burbuja de nota de voz, con el
+    microfono. No esta en la referencia de la Cloud API, pero la cuenta lo acepta
+    y cambia como se ve (verificado el 30/9/2026). Sin el flag, el mismo archivo
+    llega con el icono de auriculares, como un audio reenviado, y el cliente lo
+    rechazo por eso. Que el archivo sea Ogg/Opus es necesario pero no alcanza:
+    la marca de nota de voz es del mensaje, no del archivo.
+    """
+    def _cuerpo(media_id: str) -> dict:
+        return {
+            "recipient_type": "individual",
+            "to": destino_de_envio(destino),
+            "type": "audio",
+            "audio": {"id": media_id, "voice": True},
+        }
+
+    media_id = await _id_del_archivo(token, phone_number_id, ruta)
+    try:
+        cuerpo = await _llamar(token, phone_number_id, _cuerpo(media_id))
+    except WhatsAppError:
+        logger.warning("Meta rechazo el audio con el id guardado; se sube de nuevo")
+        media_id = await _id_del_archivo(token, phone_number_id, ruta, forzar=True)
+        cuerpo = await _llamar(token, phone_number_id, _cuerpo(media_id))
+    return (cuerpo.get("messages") or [{}])[0].get("id")
 
 
 async def enviar_video(token: str, phone_number_id: str, destino: str,

@@ -23,7 +23,7 @@ from app import audio, db, fichas, humanizacion, limites, registro
 from app.agente import herramientas, loop
 from app.canales import telegram, whatsapp
 from app.config import obtener_settings
-from app.fichas import Video
+from app.fichas import Audio, Video
 
 logger = logging.getLogger(__name__)
 
@@ -328,6 +328,13 @@ async def procesar_turno(turno: Turno) -> None:
         if respuesta.introduccion_precios:
             partes.append(humanizacion.con_emoji(respuesta.introduccion_precios))
         partes.append(respuesta.lista_de_precios)
+        # Pegada a los precios, la nota de voz del asesor: dice lo mismo que la
+        # oferta escrita pero con una persona hablando, y es distinta segun la
+        # zona —visita tecnica en Quito, llamada afuera— (30/9/2026). Una vez
+        # por conversacion: quien vuelve a preguntar el precio no la repite.
+        audio = await _audio_de_los_precios(turno.conversacion_id)
+        if audio:
+            partes.append(audio)
     # Lo que escribe el modelo: una linea con --- separa un globo del siguiente.
     # Los globos largos llevan un emoji del tema. Las fichas y la lista no se
     # tocan: ya los escribio MasterShield.
@@ -391,10 +398,12 @@ async def _enviar_partes(turno: Turno, partes: list[str | Video]) -> None:
         # "Escribiendo..." y despues la pausa: el indicador solo tiene sentido
         # mientras se supone que se esta tipeando, no durante toda la espera.
         es_video = isinstance(parte, Video)
-        espera = PAUSA_ANTES_DEL_VIDEO if es_video else humanizacion.demora_de_escritura(parte)
+        es_audio = isinstance(parte, Audio)
+        espera = (PAUSA_ANTES_DEL_VIDEO if es_video or es_audio
+                  else humanizacion.demora_de_escritura(parte))
         # El primer globo no espera como si recien empezara a tipear: el
         # indicador ya estuvo encendido mientras el agente pensaba.
-        if numero == 1 and not es_video:
+        if numero == 1 and not es_video and not es_audio:
             espera = min(espera, PAUSA_PRIMER_MENSAJE)
 
         # Enviar un mensaje apaga el indicador. Si el del mensaje siguiente se
@@ -420,7 +429,12 @@ async def _enviar_partes(turno: Turno, partes: list[str | Video]) -> None:
             )
             return
 
-        if es_video:
+        if es_audio:
+            id_externo = await _enviar_audio(turno, parte)
+            if id_externo is None:
+                continue
+            contenido, tipo = parte.contenido, "audio"
+        elif es_video:
             id_externo = await _enviar_video(turno, parte)
             if id_externo is None:
                 # No salio. No se guarda, asi el proximo producto lo intenta de
@@ -537,6 +551,43 @@ async def _enviar(turno: Turno, texto: str) -> str | None:
         )
     logger.error("canal sin implementar: %s", turno.canal)
     return None
+
+
+async def _audio_de_los_precios(conversacion_id: int) -> Audio | None:
+    """La nota de voz que acompaña a la lista, si corresponde y no salio antes."""
+    zona = await db.valor(
+        "SELECT datos->>'zona' FROM conversaciones WHERE id = $1", conversacion_id)
+    audio = fichas.audio_de_la_zona(zona)
+    if not audio or await fichas.audio_ya_enviado(conversacion_id):
+        return None
+    return audio
+
+
+async def _enviar_audio(turno: Turno, audio: Audio) -> str | None:
+    """Manda la nota de voz. Devuelve None si no salio, sin romper nada.
+
+    Un audio que falla no puede dejar a la persona sin la oferta que viene
+    detras, igual que con el video.
+    """
+    settings = obtener_settings()
+    if turno.canal != "whatsapp":
+        logger.info("el canal %s no manda audio: se sigue sin el", turno.canal)
+        return None
+    if not settings.whatsapp_token or not settings.whatsapp_phone_number_id:
+        logger.error("sin credenciales de WhatsApp: no se puede mandar el audio")
+        return None
+    if not audio.ruta.exists():
+        logger.error("no esta el archivo del audio: %s", audio.ruta)
+        return None
+    try:
+        return await whatsapp.enviar_audio(
+            settings.whatsapp_token, settings.whatsapp_phone_number_id,
+            turno.identificador, audio.ruta,
+        )
+    except Exception:
+        logger.exception("no se pudo mandar la nota de voz | conversacion=%s",
+                         turno.conversacion_id)
+        return None
 
 
 async def _enviar_video(turno: Turno, video: Video) -> str | None:

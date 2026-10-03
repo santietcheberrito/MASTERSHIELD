@@ -307,7 +307,7 @@ async def test_con_el_nombre_lo_siguiente_es_la_ciudad(pool_en_transaccion):
 
 async def test_con_nombre_y_ciudad_lo_siguiente_es_el_pedido(pool_en_transaccion):
     id_conv = await _conversacion(pool_en_transaccion, {
-        "nombre": "Ana", "zona": "otra_ciudad", "linea": "arquitectonico"})
+        "nombre": "Ana", "zona": "zona_verde", "linea": "arquitectonico"})
     r = await herramientas.consultar_precio(id_conv)
     assert r["falta"] == ["objetivo", "referencia"]
     assert "que quiere resolver" in r["mensaje"]
@@ -319,7 +319,7 @@ async def test_avisa_el_minimo_de_la_zona(pool_en_transaccion):
     id_conv = await _conversacion(
         pool_en_transaccion,
         {**ANTES, "linea": "arquitectonico", "objetivo": "control_solar",
-         "superficie": "ventanas", "zona": "otra_ciudad"},
+         "superficie": "ventanas", "zona": "zona_verde"},
     )
 
     r = await herramientas.consultar_precio(id_conv)
@@ -355,7 +355,7 @@ async def test_al_llegar_al_minimo_si_salen_los_precios(pool_en_transaccion):
     id_conv = await _conversacion(
         pool_en_transaccion,
         {"nombre": "Ana", "linea": "arquitectonico", "objetivo": "control_solar",
-         "superficie": "ventanas", "zona": "otra_ciudad", "metros_cuadrados": 30},
+         "superficie": "ventanas", "zona": "zona_verde", "metros_cuadrados": 30},
     )
 
     r = await herramientas.consultar_precio(id_conv)
@@ -732,7 +732,7 @@ async def test_bajo_el_minimo_se_dice_el_minimo_y_no_la_visita(pool_en_transacci
     precios: se pregunta si suma superficie."""
     id_conv = await _conversacion(pool_en_transaccion, {
         "nombre": "Santiago", "linea": "arquitectonico", "objetivo": "control_solar",
-        "superficie": "ventanas", "zona": "otra_ciudad", "metros_cuadrados": 10})
+        "superficie": "ventanas", "zona": "zona_verde", "metros_cuadrados": 10})
 
     r = await herramientas.consultar_precio(id_conv)
 

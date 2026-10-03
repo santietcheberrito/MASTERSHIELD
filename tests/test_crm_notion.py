@@ -26,6 +26,9 @@ def destino_notion(monkeypatch):
     obtener_settings.cache_clear()
 
 COMPLETO = {
+    # `nombre` va en `datos` y no solo en la columna: guardar_dato escribe en
+    # los dos lados, asi que un lead cerrado de verdad siempre lo tiene aca.
+    "nombre": "Lucía Fernández",
     "linea": "arquitectonico", "objetivo": "control_solar", "superficie": "ventanas", "zona": "quito_y_valles",
     "metros_cuadrados": 32, "garantia_anios": 10, "aplicacion": "oficina",
     "urgencia": "inmediato", "tipo_cliente": "empresa", "disponibilidad": "martes",

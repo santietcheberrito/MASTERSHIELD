@@ -141,7 +141,9 @@ async def test_la_transcripcion_queda_guardada_en_el_mensaje(
     con_openai("Son unos veinte metros")
     id_conv = await conexion.fetchval(
         "INSERT INTO conversaciones (canal, identificador) "
-        "VALUES ('whatsapp', '+593999772230') RETURNING id")
+        # Un identificador de prueba, no un numero real: con el de Pablo, el
+        # test choca con su conversacion de verdad y falla sin motivo.
+        "VALUES ('whatsapp', 'audio-test') RETURNING id")
     id_msg = await conexion.fetchval(
         "INSERT INTO mensajes (conversacion_id, rol, tipo, contenido, id_externo, payload) "
         "VALUES ($1, 'cliente', 'audio', '', 'wamid.NOTA', $2) RETURNING id",

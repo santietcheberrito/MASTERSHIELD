@@ -138,8 +138,9 @@ respuestas:
       ¿Tiene una referencia de los metros cuadrados que deben cubrirse en esta instalación?
       En caso contrario, ¿podría enviarme una fotografía, por favor?
     instrucciones: >-
-      El minimo depende de la ciudad y va de 5 a 25 m²: lo dice consultar_precio en
-      "minimo_m2_de_la_zona". No lo invente ni diga uno de memoria.
+      En {minimo} va el numero que dice arriba "Minimo de instalacion en esta zona".
+      Va de 5 a 25 m² segun la ciudad: no lo invente ni diga uno de memoria, y nunca
+      deje el {minimo} escrito tal cual.
 
   - clave: recibio_fotos
     etapa: referencia
@@ -179,6 +180,7 @@ respuestas:
 
   - clave: dar_precios
     etapa: precio
+    solo_zonas: [quito_y_valles]
     situacion: Ya estan todos los datos para dar el precio, o pidio el precio con los datos completos.
     respuesta: |
       El siguiente paso estimado {nombre} es agendar una *visita técnica* en el lugar de instalación ✅
@@ -201,6 +203,24 @@ respuestas:
       de la llamada de arriba, tal cual. Si consultar_precio avisa que no llega al
       minimo, los precios NO salen: use no_llega_al_minimo y pregunte si suma otro
       ambiente.
+
+  # Fuera de Quito y sus valles no se ofrece la visita: la visita gratuita es de
+  # Quito, y prometerla en Loja es prometer algo que la empresa no sostiene. Se
+  # ofrece la llamada y el asesor ve si la visita corresponde (29/9/2026).
+  - clave: dar_precios_fuera_de_quito
+    etapa: precio
+    solo_zonas: [pichincha_cercana, zona_azul, zona_verde, zona_roja]
+    situacion: Ya estan todos los datos para dar el precio y la persona NO esta en Quito ni sus valles.
+    respuesta: |
+      Para poder darle un presupuesto cerrado, el siguiente paso es una llamada con un asesor de MasterShield 📞
+
+      En ella vamos a despejar todas sus dudas y definir cuál es el material ideal para su caso.
+      ---
+      ¿Desea continuar?
+    instrucciones: >-
+      Igual que dar_precios: llame a consultar_precio con la introduccion, la lista
+      sale sola y su mensaje despues es solo esta oferta, tal cual. NO ofrezca la
+      visita tecnica ni diga que es sin costo: eso es de Quito y sus valles.
 
   - clave: precio_sin_datos
     etapa: general
@@ -274,6 +294,7 @@ respuestas:
 
   - clave: ofrecer_llamada
     etapa: llamada
+    solo_zonas: [quito_y_valles]
     situacion: Ya tiene los precios (o es vehicular con el modelo) y todavia no acepto la llamada.
     respuesta: |
       El siguiente paso estimado {nombre} es agendar una *visita técnica* en el lugar de instalación ✅
@@ -294,8 +315,24 @@ respuestas:
       otras palabras. En provincias no diga que la visita no tiene costo: eso esta
       confirmado para Quito y sus valles (ver la informacion de MasterShield).
 
+  - clave: ofrecer_llamada_fuera_de_quito
+    etapa: llamada
+    solo_zonas: [pichincha_cercana, zona_azul, zona_verde, zona_roja]
+    situacion: Ya tiene los precios y no esta en Quito ni sus valles, y todavia no acepto la llamada.
+    respuesta: |
+      Para poder darle un presupuesto cerrado, el siguiente paso es una llamada con un asesor de MasterShield 📞
+
+      En ella vamos a despejar todas sus dudas y definir cuál es el material ideal para su caso.
+      ---
+      ¿Desea continuar?
+    instrucciones: >-
+      Los dos mensajes van tal cual, separados por la linea de tres guiones. NO
+      ofrezca la visita tecnica. Si ya los mando y no contesto, retome en una linea
+      con otras palabras.
+
   - clave: acepto_la_llamada
     etapa: llamada
+    solo_zonas: [quito_y_valles]
     situacion: Acepto la llamada (si, dale, por favor, quiero agendar).
     respuesta: |
       Perfecto, {nombre} 📞
@@ -321,11 +358,35 @@ respuestas:
 
   - clave: para_que_es_la_llamada
     etapa: llamada
+    solo_zonas: [quito_y_valles]
     situacion: Pregunta para que es la llamada o que pasa despues.
     respuesta: |
       El asesor lo llama para coordinar la *visita técnica*: ahí se despejan las dudas, se define el material y se toman las medidas exactas, y le queda el presupuesto exacto 📏
 
       ¿Desea continuar?
+
+  - clave: acepto_fuera_de_quito
+    etapa: llamada
+    solo_zonas: [pichincha_cercana, zona_azul, zona_verde, zona_roja]
+    situacion: Acepto la llamada y no esta en Quito ni sus valles.
+    respuesta: |
+      Perfecto, {nombre} 📞
+
+      ¿Lo llamamos a este mismo número, el {telefono}, o prefiere dejar otra línea?
+    instrucciones: >-
+      El numero va TAL CUAL figura arriba en "Numero para confirmar la llamada". No
+      mencione la visita tecnica. Llame a finalizar_calificacion cuando confirme.
+
+  - clave: para_que_es_la_llamada_fuera_de_quito
+    etapa: llamada
+    solo_zonas: [pichincha_cercana, zona_azul, zona_verde, zona_roja]
+    situacion: Pregunta para que es la llamada, y no esta en Quito ni sus valles.
+    respuesta: |
+      En la llamada el asesor MS despeja sus dudas, define el material ideal para su caso y arma el presupuesto 📏
+
+      ¿Desea continuar?
+    instrucciones: >-
+      No prometa una visita: en su zona la define el asesor segun el trabajo.
 
   - clave: no_quiere_la_llamada
     etapa: llamada

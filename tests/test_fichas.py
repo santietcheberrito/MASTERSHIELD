@@ -237,7 +237,7 @@ async def _nada(*a, **k):
 def _preparar_worker(monkeypatch, respuesta, enviados, video_falla=False):
     from app import worker
 
-    async def _responder(_):
+    async def _responder(_conversacion, _hasta=None):
         return respuesta
 
     async def _enviar(turno, texto):
@@ -481,3 +481,71 @@ def test_no_repite_la_leyenda_del_video():
     r = Respuesta(texto=texto, fichas=[SEGURIDAD])
 
     assert loop.lineas_nuevas(texto, loop.bloques_del_turno(r)) == "¿Cuántos m² son?"
+
+
+# --- la nota de voz del asesor ------------------------------------------------
+# Esteban grabo dos: la de Quito ofrece la visita tecnica, la del resto del pais
+# ofrece la llamada. Salen pegadas a la lista de precios (30/9/2026).
+
+@pytest.mark.parametrize("zona, archivo", [
+    ("quito_y_valles", "audio-quito-visita.ogg"),
+    ("pichincha_cercana", "audio-fuera-llamada.ogg"),
+    ("zona_azul", "audio-fuera-llamada.ogg"),
+    ("zona_verde", "audio-fuera-llamada.ogg"),
+    ("zona_roja", "audio-fuera-llamada.ogg"),
+])
+def test_cada_zona_tiene_su_nota_de_voz(zona, archivo):
+    assert fichas.audio_de_la_zona(zona).ruta.name == archivo
+
+
+def test_solo_quito_escucha_la_de_la_visita():
+    """Prometer la visita gratis en Loja es prometer algo que no se sostiene."""
+    quito = fichas.audio_de_la_zona("quito_y_valles")
+    afuera = fichas.audio_de_la_zona("zona_roja")
+    assert quito.ruta != afuera.ruta
+    assert "visita" in quito.descripcion
+    assert "llamada" in afuera.descripcion
+
+
+@pytest.mark.parametrize("zona", [None, "", "galapagos", "fuera_del_pais", "inventada"])
+def test_sin_zona_de_venta_no_hay_nota_de_voz(zona):
+    assert fichas.audio_de_la_zona(zona) is None
+
+
+def test_los_dos_audios_estan_en_el_repo():
+    """Si falta el archivo, el worker lo saltea y la respuesta sale igual, pero
+    el cliente pidio que salgan: mejor que falle un test a que falte en silencio."""
+    for zona in ("quito_y_valles", "zona_verde"):
+        ruta = fichas.AUDIO_POR_ZONA[zona].ruta
+        assert ruta.exists(), f"falta {ruta}"
+        assert ruta.suffix == ".ogg", (
+            "WhatsApp solo dibuja la burbuja de nota de voz con Ogg/Opus; "
+            "en .m4a llega con el icono de auriculares, como un audio reenviado"
+        )
+        assert ruta.stat().st_size < 16 * 1024 * 1024, "el maximo de WhatsApp"
+
+
+def _metadatos_de(ruta) -> int:
+    """Cuantos campos tiene el header OpusTags del archivo."""
+    datos = ruta.read_bytes()[:4096]
+    i = datos.index(b"OpusTags")
+    largo_vendor = int.from_bytes(datos[i + 8:i + 12], "little")
+    inicio = i + 12 + largo_vendor
+    return int.from_bytes(datos[inicio:inicio + 4], "little")
+
+
+@pytest.mark.parametrize("zona", ["quito_y_valles", "zona_verde"])
+def test_las_notas_de_voz_no_arrastran_metadatos(zona):
+    """Con los tags que vienen del .mp4 original —creation_time, handler_name—
+    Meta acepta la subida, acepta el envio, y despues no entrega: error 131053.
+    Un audio asi parece mandado y nunca llega, asi que se mira el archivo.
+
+    Se regeneran con `scripts/preparar_audio.py`, que ya saca los metadatos.
+    """
+    assert _metadatos_de(fichas.AUDIO_POR_ZONA[zona].ruta) <= 1
+
+
+def test_lo_que_queda_en_el_historial_dice_que_fue_una_nota_de_voz():
+    """El modelo lo lee en los turnos siguientes y el asesor en la transcripcion."""
+    audio = fichas.audio_de_la_zona("quito_y_valles")
+    assert audio.contenido.startswith("[nota de voz de un asesor MS")

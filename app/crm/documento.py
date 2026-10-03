@@ -19,20 +19,22 @@ from typing import Any
 from app import db
 from app.canales import whatsapp
 from app.config import obtener_settings
-from app.precios import cotizar, producto_para, producto_para_cotizar
+from app.precios import cotizar, minimo_de, producto_para, producto_para_cotizar
 from app.scoring import CONVERSANDO, DERIVADA, Puntaje, puntuar
 
 logger = logging.getLogger(__name__)
 
 CANALES = {"telegram": "Telegram", "whatsapp": "WhatsApp", "consola": "Consola"}
 # Como se lee cada zona en el lead. El asesor necesita el lugar (va en `ciudad`)
-# y la zona le dice el minimo y la lista de precios que se le informo.
+# y la zona le dice la lista de precios que se le informo. El minimo no va en el
+# nombre: con la ciudad, la zona ya viene entre parentesis —"Cuenca (zona
+# verde)"— y meterlo ahi daba parentesis anidados. Sale como parte aparte.
 ZONAS = {
-    "quito_y_valles": "Quito y valles (mínimo 5 m²)",
-    "pichincha_cercana": "Pichincha, zonas cercanas (mínimo 10 m²)",
-    "zona_azul": "Zona azul (mínimo 15 m²)",
-    "zona_verde": "Zona verde (mínimo 20 m²)",
-    "zona_roja": "Zona roja (mínimo 25 m²)",
+    "quito_y_valles": "Quito y valles",
+    "pichincha_cercana": "Pichincha, zonas cercanas",
+    "zona_azul": "Zona azul",
+    "zona_verde": "Zona verde",
+    "zona_roja": "Zona roja",
     "galapagos": "Galápagos (no se atiende)",
     "fuera_del_pais": "Fuera de Ecuador (no se atiende)",
 }
@@ -206,10 +208,14 @@ def resumir(datos: dict[str, Any], puntaje: Puntaje, presupuesto: float | None) 
         partes.append(APLICACIONES.get(datos["aplicacion"], datos["aplicacion"]).lower())
     if datos.get("zona"):
         zona = ZONAS.get(datos["zona"], datos["zona"])
-        # Con la ciudad relevada se dice "Cuenca (otra ciudad del pais)": el
-        # asesor necesita el lugar, y la zona explica el precio y el minimo.
+        # Con la ciudad relevada se dice "Cuenca (zona verde)": el asesor
+        # necesita el lugar, y la zona explica el precio que se le informo.
         ciudad = datos.get("ciudad")
         partes.append(f"{ciudad} ({zona.lower()})" if ciudad else zona)
+        # El minimo decide si el lead es viable, y de 5 a 25 m2 cambia todo.
+        minimo = minimo_de(datos["zona"])
+        if minimo:
+            partes.append(f"mínimo {minimo:g} m²")
 
     lineas = [" · ".join(partes) if partes else "Consulta sin datos suficientes"]
 

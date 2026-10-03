@@ -32,7 +32,7 @@ campos:
     requerido: true
 
   # La zona es una categoria de precio: "Cuenca" y "Manta" son las dos
-  # otra_ciudad. Sin este campo el nombre real se perdia, el agente no tenia con
+  # zona_verde. Sin este campo el nombre real se perdia, el agente no tenia con
   # que completar "registramos {ciudad}" y volvia a preguntarla aunque ya la
   # supiera (16/9/2026), y el asesor recibia el lead sin saber adonde ir.
   ciudad:

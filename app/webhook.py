@@ -126,7 +126,11 @@ async def recibir_whatsapp(
 
     mensaje = whatsapp.parsear(payload)
     if mensaje is None:
-        # Estados de entrega y lectura de lo que mandamos nosotros.
+        # Estados de entrega y lectura de lo que mandamos nosotros. El unico que
+        # importa es el fallo: Meta lo avisa solo por aca, y sin log un mensaje
+        # que nunca llego parece uno entregado.
+        for wamid, motivo in whatsapp.entregas_fallidas(payload):
+            logger.error("Meta no pudo entregar un mensaje | %s | %s", wamid, motivo)
         return Response(status_code=200)
 
     try:

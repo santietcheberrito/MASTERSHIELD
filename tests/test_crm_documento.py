@@ -231,14 +231,26 @@ def _puntaje():
 
 
 def test_la_nota_dice_la_ciudad_y_la_zona(settings_de_prueba):
-    """"Otra ciudad del país" no le sirve a nadie para subirse a un auto: el
-    asesor necesita el lugar, y la zona explica el precio (16/9/2026)."""
+    """Solo la zona no le sirve a nadie para subirse a un auto: el asesor
+    necesita el lugar, y la zona explica el precio (16/9/2026)."""
     resumen = documento.resumir(
-        {"linea": "arquitectonico", "objetivo": "seguridad", "zona": "otra_ciudad",
+        {"linea": "arquitectonico", "objetivo": "seguridad", "zona": "zona_verde",
          "ciudad": "Cuenca", "metros_cuadrados": 50},
         _puntaje(), None)
 
-    assert "Cuenca (otra ciudad del país)" in resumen
+    assert "Cuenca (zona verde)" in resumen
+
+
+def test_el_minimo_de_la_zona_no_queda_dentro_del_parentesis(settings_de_prueba):
+    """Con el minimo en el nombre de la zona salia "Cuenca (zona verde (minimo
+    20 m2))". Va como parte aparte: el asesor lo necesita para ver si es viable."""
+    resumen = documento.resumir(
+        {"linea": "arquitectonico", "objetivo": "seguridad", "zona": "zona_verde",
+         "ciudad": "Cuenca", "metros_cuadrados": 50},
+        _puntaje(), None)
+
+    assert "Cuenca (zona verde) · mínimo 20 m²" in resumen
+    assert "((" not in resumen and "))" not in resumen
 
 
 def test_sin_ciudad_relevada_la_nota_sale_igual(settings_de_prueba):

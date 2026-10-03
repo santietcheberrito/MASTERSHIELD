@@ -326,3 +326,120 @@ def test_una_foto_sigue_pasando():
     mensaje = whatsapp.parsear(p)
 
     assert mensaje is not None and mensaje.tipo == "imagen"
+
+
+# --- los fallos de entrega ----------------------------------------------------
+# Meta responde 200 al enviar y avisa del fallo despues, por webhook. El payload
+# de abajo es el real que devolvio la cuenta el 30/9/2026 con los audios en ogg.
+
+def estado(**cambios):
+    est = {
+        "id": "wamid.HBgNNTQ5MTE2MDA3NDYwNA",
+        "status": "failed",
+        "timestamp": "1790781894",
+        "recipient_id": "5491160074604",
+        "errors": [{
+            "code": 131053,
+            "title": "Media upload error",
+            "error_data": {"details": (
+                "Audio file uploaded with mimetype as audio/ogg; codecs=opus, "
+                "however on processing it is of type application/octet-stream."
+            )},
+        }],
+    }
+    est.update(cambios)
+    return {"object": "whatsapp_business_account", "entry": [{
+        "id": "WABA", "changes": [{"field": "messages", "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {"phone_number_id": "PNID"},
+            "statuses": [est],
+        }}]}]}
+
+
+def test_un_fallo_de_entrega_se_puede_contar():
+    """Lo que Meta acepto y despues tiro tiene que quedar en el log."""
+    fallidos = whatsapp.entregas_fallidas(estado())
+
+    assert len(fallidos) == 1
+    wamid, motivo = fallidos[0]
+    assert wamid == "wamid.HBgNNTQ5MTE2MDA3NDYwNA"
+    assert "131053" in motivo
+    assert "octet-stream" in motivo
+
+
+@pytest.mark.parametrize("cual", ["sent", "delivered", "read"])
+def test_los_estados_normales_no_son_fallos(cual):
+    """Casi todos los estados son buenas noticias y no van al log de errores."""
+    assert whatsapp.entregas_fallidas(estado(status=cual, errors=None)) == []
+
+
+def test_un_mensaje_entrante_no_trae_fallos():
+    assert whatsapp.entregas_fallidas(payload()) == []
+
+
+def test_un_payload_raro_no_explota():
+    """El webhook contesta 200 igual: si esto tira, Meta reintenta al infinito."""
+    for raro in ({}, {"entry": []}, {"entry": [{"changes": []}]}, {"entry": "no"}):
+        assert whatsapp.entregas_fallidas(raro) == []
+
+
+# --- el tipo con el que se sube cada archivo -----------------------------------
+
+@pytest.mark.parametrize("extension, esperado", [
+    (".ogg", "audio/ogg; codecs=opus"),
+    (".m4a", "audio/mp4"),
+    (".mp3", "audio/mpeg"),
+    (".mp4", "video/mp4"),
+])
+def test_cada_extension_se_sube_con_el_tipo_que_meta_acepta(extension, esperado):
+    """`mimetypes` dice "audio/ogg" a secas y "audio/mp4a-latm" para .m4a, y
+    Meta rechaza los dos."""
+    assert whatsapp.MIME_POR_EXTENSION[extension] == esperado
+
+
+def test_el_ogg_declara_el_codec():
+    """Sin el codec en el mime, Meta no lo toma como nota de voz."""
+    assert "opus" in whatsapp.MIME_POR_EXTENSION[".ogg"]
+
+
+# --- el envio de la nota de voz -----------------------------------------------
+
+@respx.mock
+async def test_la_nota_de_voz_sale_marcada_como_nota_de_voz(respx_mock, tmp_path):
+    """Sin `voice`, el mismo Ogg/Opus llega con el icono de auriculares, como un
+    audio reenviado. El cliente lo rechazo por eso el 30/9/2026, y desde el
+    cuerpo del mensaje no se nota: hay que mirar que el flag viaje."""
+    import httpx as _httpx
+
+    ruta = tmp_path / "nota.ogg"
+    ruta.write_bytes(b"OggS-falso")
+    subida = respx_mock.post("https://graph.facebook.com/v23.0/123/media").mock(
+        return_value=_httpx.Response(200, json={"id": "media-1"}))
+    envio = respx_mock.post("https://graph.facebook.com/v23.0/123/messages").mock(
+        return_value=_httpx.Response(200, json={"messages": [{"id": "wamid.X"}]}))
+
+    await whatsapp.enviar_audio("token", "123", "+5491160074604", ruta)
+
+    assert subida.called and envio.called
+    cuerpo = json.loads(envio.calls[0].request.content)
+    assert cuerpo["type"] == "audio"
+    assert cuerpo["audio"]["voice"] is True, "sin esto llega como archivo adjunto"
+    assert cuerpo["audio"]["id"] == "media-1"
+
+
+@respx.mock
+async def test_la_nota_de_voz_se_sube_declarando_opus(respx_mock, tmp_path):
+    """Meta pide el codec en el mime; `mimetypes` dice "audio/ogg" a secas."""
+    import httpx as _httpx
+
+    ruta = tmp_path / "nota.ogg"
+    ruta.write_bytes(b"OggS-falso")
+    subida = respx_mock.post("https://graph.facebook.com/v23.0/123/media").mock(
+        return_value=_httpx.Response(200, json={"id": "media-1"}))
+    respx_mock.post("https://graph.facebook.com/v23.0/123/messages").mock(
+        return_value=_httpx.Response(200, json={"messages": [{"id": "wamid.X"}]}))
+
+    await whatsapp.enviar_audio("token", "123", "+5491160074604", ruta)
+
+    enviado = subida.calls[0].request.content.decode("latin-1")
+    assert "audio/ogg; codecs=opus" in enviado
