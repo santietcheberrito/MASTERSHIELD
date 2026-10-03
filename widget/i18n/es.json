@@ -1,0 +1,14 @@
+{
+  "widget": {
+    "name": "Agente MasterShield",
+    "description": "Conecta el agente de ventas de MasterShield con los chats de Kommo.",
+    "short_description": "El agente contesta los chats"
+  },
+  "salesbot": {
+    "consultar_agente": "Consultar al agente",
+    "url": "URL del agente"
+  },
+  "settings": {
+    "url": "URL del agente"
+  }
+}

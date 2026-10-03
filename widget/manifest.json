@@ -1,0 +1,44 @@
+{
+  "widget": {
+    "name": "widget.name",
+    "description": "widget.description",
+    "short_description": "widget.short_description",
+    "version": "1.0.0",
+    "interface_version": 2,
+    "init_once": false,
+    "locale": [
+      "es",
+      "en"
+    ],
+    "installation": true,
+    "support": {
+      "link": "https://mastershield.ec",
+      "email": "santietcheberrito@gmail.com"
+    }
+  },
+  "locations": [
+    "settings",
+    "salesbot_designer"
+  ],
+  "salesbot_designer": {
+    "logo": "/widgets/agente_mastershield/images/logo.png",
+    "consultar_agente": {
+      "name": "salesbot.consultar_agente",
+      "settings": {
+        "url": {
+          "name": "salesbot.url",
+          "type": "text",
+          "default_value": "https://ejemplo.trycloudflare.com/kommo/turno",
+          "manual": true
+        }
+      }
+    }
+  },
+  "settings": {
+    "url": {
+      "name": "settings.url",
+      "type": "text",
+      "required": true
+    }
+  }
+}
