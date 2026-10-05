@@ -182,27 +182,15 @@ respuestas:
     etapa: precio
     solo_zonas: [quito_y_valles]
     situacion: Ya estan todos los datos para dar el precio, o pidio el precio con los datos completos.
-    respuesta: |
-      El siguiente paso estimado {nombre} es agendar una *visita técnica* en el lugar de instalación ✅
-      En ella vamos a despejar todas las dudas, determinamos cuál es el material ideal para su caso específico y tomamos medidas exactas 🙌🏼
-
-      Esta no tiene ningún costo 💲❌
-
-      👌🏼 En ese mismo momento le entregaremos el presupuesto exacto del trabajo a realizarse
-      ---
-      ¿Desearía agendar esta *visita técnica*?
-
-      Uno de nuestros asesores MS se pondrá en contacto en seguida para revisar los detalles de su visita.
-
-      ¿Desea continuar?
     instrucciones: >-
       Llame a consultar_precio con introduccion "Gracias, {nombre}. Estos son los
       valores de este mes para *{producto}* en {ciudad}:" (adapte el agradecimiento
       a lo ultimo que dijo). La lista sale sola, con las calidades y formas de pago:
-      no escriba ningun precio. Su mensaje, despues de la lista, es solo la oferta
-      de la llamada de arriba, tal cual. Si consultar_precio avisa que no llega al
-      minimo, los precios NO salen: use no_llega_al_minimo y pregunte si suma otro
-      ambiente.
+      no escriba ningun precio. Despues de la lista NO escriba nada mas: detras va
+      la nota de voz de un asesor, que es la que ofrece la visita tecnica. Repetirlo
+      en texto dice dos veces lo mismo (5/10/2026). Si consultar_precio avisa que no
+      llega al minimo, los precios NO salen: use no_llega_al_minimo y pregunte si
+      suma otro ambiente.
 
   # Fuera de Quito y sus valles no se ofrece la visita: la visita gratuita es de
   # Quito, y prometerla en Loja es prometer algo que la empresa no sostiene. Se
@@ -211,16 +199,11 @@ respuestas:
     etapa: precio
     solo_zonas: [pichincha_cercana, zona_azul, zona_verde, zona_roja]
     situacion: Ya estan todos los datos para dar el precio y la persona NO esta en Quito ni sus valles.
-    respuesta: |
-      Para poder darle un presupuesto cerrado, el siguiente paso es una llamada con un asesor de MasterShield 📞
-
-      En ella vamos a despejar todas sus dudas y definir cuál es el material ideal para su caso.
-      ---
-      ¿Desea continuar?
     instrucciones: >-
-      Igual que dar_precios: llame a consultar_precio con la introduccion, la lista
-      sale sola y su mensaje despues es solo esta oferta, tal cual. NO ofrezca la
-      visita tecnica ni diga que es sin costo: eso es de Quito y sus valles.
+      Igual que dar_precios: llame a consultar_precio con la introduccion y la lista
+      sale sola. Despues de la lista NO escriba nada mas: detras va la nota de voz
+      de un asesor, que es la que ofrece la llamada. NO ofrezca la visita tecnica ni
+      diga que es sin costo: eso es de Quito y sus valles.
 
   - clave: precio_sin_datos
     etapa: general

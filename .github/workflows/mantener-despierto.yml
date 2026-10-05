@@ -1,0 +1,44 @@
+# Mantiene despierto al agente mientras esté en el plan gratuito de Render.
+#
+# Render suspende un servicio gratuito a los 15 minutos sin tráfico, y eso no
+# sólo demora la primera respuesta: adentro del agente corren tres ciclos —los
+# turnos, los reintentos del CRM y el despertador de pausas— que con el
+# servicio suspendido no corren. Una conversación que un asesor pausó podría no
+# despertarse nunca.
+#
+# Es un parche para la etapa de evaluación, no una solución: el plan Starter
+# cuesta 7 dólares y resuelve esto de verdad. Cuando se pase a pago, este
+# archivo se borra.
+#
+# De paso sirve de monitoreo: si el agente no responde, la tarea falla y GitHub
+# avisa.
+
+name: Mantener despierto el agente
+
+on:
+  schedule:
+    # Cada 5 minutos. GitHub a veces demora las tareas programadas varios
+    # minutos, así que el margen contra la ventana de 15 es a propósito.
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  despertar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consultar la salud del agente
+        run: |
+          respuesta=$(curl -sS --max-time 60 --retry 2 --retry-delay 10 \
+            -w "\n%{http_code}" https://mastershield.onrender.com/health)
+          cuerpo=$(echo "$respuesta" | head -n -1)
+          codigo=$(echo "$respuesta" | tail -n 1)
+          echo "HTTP $codigo — $cuerpo"
+          if [ "$codigo" != "200" ]; then
+            echo "El agente no respondió 200."
+            exit 1
+          fi
+          # `base` en ok es lo que confirma que además llega a la base de datos.
+          echo "$cuerpo" | grep -q '"base":"ok"' || {
+            echo "El agente responde pero no alcanza la base."
+            exit 1
+          }
