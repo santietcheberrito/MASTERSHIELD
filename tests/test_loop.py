@@ -428,3 +428,21 @@ async def test_si_se_agotan_las_iteraciones_igual_se_contesta(
 
     assert sin_herramientas.get("si"), "se pide la respuesta sin herramientas"
     assert "47" in r.texto, "la persona recibe algo"
+
+
+# --- callarse cuando lo demas ya salio ----------------------------------------
+
+def test_si_todo_repite_y_el_turno_ya_mando_algo_no_se_dice_nada():
+    """En el turno de los precios el agente no escribe: la lista y la nota de voz
+    hacen el trabajo. Como no le queda nada propio que decir, repetia la
+    introduccion de la lista por segunda vez (5/10/2026)."""
+    introduccion = "Gracias, Santiago. Estos son los valores de este mes para control solar en Quito:"
+
+    assert loop.lineas_nuevas(introduccion, [], [introduccion]) == ""
+
+
+def test_si_todo_repite_y_no_sale_nada_mas_queda_la_ultima_linea():
+    """Sin la lista ni la ficha, callarse dejaria a la persona sin respuesta."""
+    dicho = "¿Desea agendar la visita?"
+
+    assert loop.lineas_nuevas(dicho, [dicho], []) == dicho

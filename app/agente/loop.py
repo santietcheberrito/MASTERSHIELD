@@ -394,9 +394,12 @@ def lineas_nuevas(texto: str, previos: list[str], del_turno: list[str] | None = 
 
     Tambien contra lo que ya quedo de esta misma respuesta: el modelo a veces
     escribe la respuesta antes de usar herramientas y la vuelve a escribir
-    despues. Los renglones vacios y los separadores de globo se conservan. Si
-    todo repite, queda la ultima linea: mandar nada dejaria a la persona sin
-    respuesta.
+    despues. Los renglones vacios y los separadores de globo se conservan.
+
+    Si todo repite y no sale nada mas en el turno, queda la ultima linea: mandar
+    nada dejaria a la persona sin respuesta. Pero si el turno ya lleva una lista
+    de precios, una ficha o una nota de voz, se va entero: ahi callarse es lo
+    correcto.
     """
     lineas = texto.splitlines()
     previas = [p for previo in previos for p in _oraciones(previo)]
@@ -442,6 +445,12 @@ def lineas_nuevas(texto: str, previos: list[str], del_turno: list[str] | None = 
             nuevas.append(" ".join(quedan))
             alguna = True
     if not alguna:
+        # Si ya sale algo mas en este turno —la lista de precios, una ficha, la
+        # nota de voz— la persona no se queda sin respuesta y lo que repite se
+        # va entero. Antes quedaba la ultima linea, y en el turno de los precios
+        # eso devolvia la introduccion de la lista por segunda vez (5/10/2026).
+        if del_turno:
+            return ""
         con_texto = [l for l in lineas if l.strip() and l.strip() != "---"]
         return con_texto[-1] if con_texto else ""
     resultado = _limpiar_renglones("\n".join(nuevas))
